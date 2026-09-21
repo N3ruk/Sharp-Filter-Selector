@@ -1,0 +1,22 @@
+{
+  "name": "sharp-filter-selector",
+  "version": "0.3.0",
+  "description": "Decky Loader plugin for switching Gamescope scaling between FSR and NIS.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p dist && cp src/index.js dist/index.js",
+    "package": "bash scripts/package.sh"
+  },
+  "keywords": [
+    "decky",
+    "steam-deck",
+    "steamos",
+    "gamescope",
+    "fsr",
+    "nis",
+    "scaling"
+  ],
+  "author": "N3ruk",
+  "license": "BSD-3-Clause"
+}
