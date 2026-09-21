@@ -21,6 +21,10 @@ function storedSharpness() {
   return Number.isInteger(value) && value >= 0 && value <= 5 ? value : 5;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function Panel() {
   const [nisEnabled, setNisEnabledState] = React.useState(storedEnabled);
   const [sharpness, setSharpnessState] = React.useState(storedSharpness);
@@ -33,8 +37,33 @@ function Panel() {
       : `NIS disabled · FSR active${targets}`;
   }
 
+  async function verifyNis(level, fallbackDisplays) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await sleep(attempt === 0 ? 350 : 500);
+      const result = await getStatus();
+      if (result?.success && result.enabled) {
+        setStatus(`NIS verified active · sharpness ${level}/5`);
+        return true;
+      }
+    }
+
+    try {
+      const result = await getStatus();
+      if (result?.success && result.requested && result.enforcing) {
+        setStatus("NIS requested · SteamOS is still forcing FSR · automatic retry active");
+      } else if (result?.success) {
+        setStatus(describe(result.enabled, result.level ?? level, result.displays ?? fallbackDisplays));
+      } else {
+        setStatus(result?.error || "Could not verify the active Gamescope filter");
+      }
+    } catch (_) {
+      setStatus("NIS requested · verification unavailable");
+    }
+    return false;
+  }
+
   async function applyEnabled(enabled) {
-    setStatus("Applying…");
+    setStatus(enabled ? "Applying NIS…" : "Restoring FSR…");
     try {
       const engineResult = await setNisEnabled(enabled);
       if (!engineResult.success) {
@@ -54,7 +83,13 @@ function Panel() {
 
       localStorage.setItem(ENABLED_KEY, String(enabled));
       setNisEnabledState(enabled);
-      setStatus(describe(enabled, sharpness, displays));
+
+      if (enabled) {
+        setStatus("NIS requested · verifying…");
+        await verifyNis(sharpness, displays);
+      } else {
+        setStatus(describe(false, sharpness, displays));
+      }
     } catch (error) {
       setStatus(`Error: ${String(error)}`);
     }
@@ -73,7 +108,8 @@ function Panel() {
         setStatus(result.error || "Could not apply NIS sharpness");
         return;
       }
-      setStatus(describe(true, level, result.displays));
+      setStatus(`NIS requested · sharpness ${level}/5 · verifying…`);
+      await verifyNis(level, result.displays);
     } catch (error) {
       setStatus(`Error: ${String(error)}`);
     }
@@ -106,16 +142,26 @@ function Panel() {
 
         setNisEnabledState(desiredEnabled);
         setSharpnessState(desiredSharpness);
-        setStatus(describe(desiredEnabled, desiredSharpness, displays));
+
+        if (desiredEnabled) {
+          setStatus("NIS requested · verifying…");
+          await verifyNis(desiredSharpness, displays);
+        } else {
+          setStatus(describe(false, desiredSharpness, displays));
+        }
       } catch (error) {
         if (!mounted) return;
         try {
           const result = await getStatus();
           if (!mounted) return;
           if (result.success) {
-            setNisEnabledState(result.enabled);
+            setNisEnabledState(result.requested ?? result.enabled);
             if (Number.isInteger(result.level)) setSharpnessState(result.level);
-            setStatus(describe(result.enabled, result.level ?? desiredSharpness, result.displays));
+            if (result.requested && !result.enabled && result.enforcing) {
+              setStatus("NIS requested · SteamOS is still forcing FSR · automatic retry active");
+            } else {
+              setStatus(describe(result.enabled, result.level ?? desiredSharpness, result.displays));
+            }
           } else {
             setStatus(result.error || "Available in a Gamescope session");
           }
@@ -134,8 +180,8 @@ function Panel() {
       React.createElement(DFL.ToggleField, {
         label: "Use NIS",
         description: nisEnabled
-          ? "NVIDIA Image Scaling is the active Gamescope scaling filter."
-          : "AMD FidelityFX Super Resolution is the active Gamescope scaling filter.",
+          ? "NIS is requested and will be re-applied if SteamOS tries to restore FSR."
+          : "AMD FidelityFX Super Resolution is the selected Gamescope filter.",
         checked: nisEnabled,
         onChange: applyEnabled
       })
