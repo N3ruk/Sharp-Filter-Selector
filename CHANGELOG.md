@@ -2,6 +2,16 @@
 
 All notable changes to Sharp Filter Selector are documented here.
 
+## [0.3.1] - 2026-09-22
+
+### Fixed
+
+- Added persistent NIS enforcement for SteamOS/Game Mode when Steam/QAM re-applies FSR after the plugin selects NIS.
+- Explicitly applies Gamescope's AUTO scaler together with the modern and legacy NIS filter selectors.
+- Removed the speculative compatibility selector from the active filter-write path and now relies on upstream Gamescope properties.
+- Added Gamescope FSR feedback checks so the plugin can detect when FSR is still the effective scaler.
+- Added in-plugin verification messages after enabling NIS, so Steam Deck testing no longer requires terminal commands.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added
