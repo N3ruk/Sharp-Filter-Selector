@@ -1,0 +1,59 @@
+name: Publish v0.3.1
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-v0.3.1.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Python backend
+        run: python -m py_compile main.py
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package plugin
+        run: npm run package
+
+      - name: Prepare release notes
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          ## Sharp Filter Selector 0.3.1
+
+          SteamOS/Game Mode compatibility test release.
+
+          ### Fixes
+
+          - Keeps NIS enforced if Steam/QAM re-applies FSR after the plugin changes the scaler.
+          - Applies both modern and legacy Gamescope selectors plus AUTO scaler state.
+          - Uses Gamescope's FSR feedback property to detect an active FSR override.
+          - Adds in-plugin verification so the Quick Access Menu reports whether NIS was actually confirmed.
+          - Keeps the existing 0-5 sharpness control unchanged.
+
+          ### Test request
+
+          On Steam Deck / SteamOS, enable scaling below native resolution, turn on **Use NIS**, and watch both MangoHud and the status line in Sharp Filter Selector.
+
+          The desired result is:
+          - MangoHud reports NIS.
+          - The plugin reports **NIS verified active**.
+
+          If SteamOS still wins the filter state, the plugin should instead report that SteamOS is still forcing FSR while automatic retry remains active.
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.3.1             release/sharp-filter-selector-v0.3.1.zip             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "Sharp Filter Selector 0.3.1"             --notes-file /tmp/release-notes.md
