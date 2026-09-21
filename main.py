@@ -1,13 +1,14 @@
 """Decky backend for switching Gamescope scaling between FSR and NIS.
 
-The plugin writes Gamescope's scaling and sharpness properties to every active
-Gamescope/Xwayland root it can discover. An additional compatibility selector
-is written for Gamescope setups that expose it; systems that do not use that
-property simply ignore it.
+The backend writes the official Gamescope X11 properties used by Steam/Game Mode
+and keeps the requested NIS state enforced while enabled. This is intentional:
+on SteamOS, Steam/QAM can re-assert its own FSR selection after another client
+changes the Gamescope filter.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import shutil
@@ -31,13 +32,21 @@ LEGACY_SCALING_NIS = 4
 NEW_SCALING_FSR = 2
 NEW_SCALING_NIS = 3
 
-# Optional compatibility selector used by some Gamescope setups.
-COMPAT_SCALING_FSR = 0
-COMPAT_SCALING_NIS = 1
+# GamescopeUpscaleScaler enum: 0 = AUTO.
+NEW_SCALER_AUTO = 0
+
+# Fast retries catch Steam/QAM immediately re-applying FSR after our first write.
+FAST_ENFORCE_PASSES = 5
+FAST_ENFORCE_INTERVAL = 0.20
+STEADY_ENFORCE_INTERVAL = 0.75
 
 
 class Plugin:
     """Control Gamescope scaling properties on active Xwayland roots."""
+
+    def __init__(self):
+        self._nis_requested = False
+        self._enforce_task: asyncio.Task | None = None
 
     @staticmethod
     def _xprop_binary() -> str | None:
@@ -54,12 +63,7 @@ class Plugin:
 
     @staticmethod
     def _displays() -> list[tuple[str, int, int, dict[str, str]]]:
-        """Discover DISPLAYs that belong to a Gamescope session.
-
-        Decky may run with different privileges from Steam/Gamescope, so the
-        process environment is inspected and xprop is later executed as the
-        owner of the Gamescope session.
-        """
+        """Discover DISPLAYs that belong to a Gamescope session."""
         displays: dict[str, tuple[int, int, dict[str, str]]] = {}
 
         try:
@@ -227,37 +231,164 @@ class Plugin:
 
     @staticmethod
     def _engine_properties(enabled: bool) -> tuple[tuple[str, int], ...]:
+        """Return only official upstream Gamescope properties.
+
+        Set the modern scaler/filter first and the legacy Steam/QAM selector
+        last. The legacy selector sets AUTO + NIS/FSR in Gamescope.
+        """
         if enabled:
             return (
-                ("GAMESCOPE_SCALING_FILTER", LEGACY_SCALING_NIS),
+                ("GAMESCOPE_NEW_SCALING_SCALER", NEW_SCALER_AUTO),
                 ("GAMESCOPE_NEW_SCALING_FILTER", NEW_SCALING_NIS),
-                ("GAMESCOPE_SHARP_FILTER", COMPAT_SCALING_NIS),
+                ("GAMESCOPE_SCALING_FILTER", LEGACY_SCALING_NIS),
             )
 
         return (
-            ("GAMESCOPE_SCALING_FILTER", LEGACY_SCALING_FSR),
+            ("GAMESCOPE_NEW_SCALING_SCALER", NEW_SCALER_AUTO),
             ("GAMESCOPE_NEW_SCALING_FILTER", NEW_SCALING_FSR),
-            ("GAMESCOPE_SHARP_FILTER", COMPAT_SCALING_FSR),
+            ("GAMESCOPE_SCALING_FILTER", LEGACY_SCALING_FSR),
         )
+
+    @classmethod
+    def _nis_state_on_display(
+        cls,
+        display: str,
+        uid: int,
+        gid: int,
+        environment: dict[str, str],
+    ) -> dict:
+        legacy = cls._read_property(
+            display, uid, gid, environment, "GAMESCOPE_SCALING_FILTER"
+        )
+        modern = cls._read_property(
+            display, uid, gid, environment, "GAMESCOPE_NEW_SCALING_FILTER"
+        )
+        scaler = cls._read_property(
+            display, uid, gid, environment, "GAMESCOPE_NEW_SCALING_SCALER"
+        )
+        fsr_feedback = cls._read_property(
+            display, uid, gid, environment, "GAMESCOPE_FSR_FEEDBACK"
+        )
+
+        selectors_are_nis = (
+            legacy == LEGACY_SCALING_NIS and modern == NEW_SCALING_NIS
+        )
+
+        return {
+            "legacy": legacy,
+            "modern": modern,
+            "scaler": scaler,
+            "fsrFeedback": fsr_feedback,
+            "selectorsAreNis": selectors_are_nis,
+        }
+
+    def _start_enforcer(self) -> None:
+        task = self._enforce_task
+        if task and not task.done():
+            task.cancel()
+        self._enforce_task = asyncio.create_task(self._enforce_nis_loop())
+
+    async def _stop_enforcer(self) -> None:
+        task = self._enforce_task
+        self._enforce_task = None
+        if not task:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _enforce_nis_loop(self) -> None:
+        """Keep NIS selected if Steam/QAM reasserts FSR."""
+        fast_passes = FAST_ENFORCE_PASSES
+
+        try:
+            while self._nis_requested:
+                delay = (
+                    FAST_ENFORCE_INTERVAL
+                    if fast_passes > 0
+                    else STEADY_ENFORCE_INTERVAL
+                )
+                await asyncio.sleep(delay)
+
+                if not self._nis_requested:
+                    break
+
+                displays = self._displays()
+                needs_reapply = fast_passes > 0
+
+                for display, uid, gid, environment in displays:
+                    state = self._nis_state_on_display(
+                        display, uid, gid, environment
+                    )
+                    if (
+                        not state["selectorsAreNis"]
+                        or state["fsrFeedback"] == 1
+                    ):
+                        needs_reapply = True
+                        break
+
+                if needs_reapply and displays:
+                    applied, errors = self._write_all(
+                        self._engine_properties(True)
+                    )
+                    if applied:
+                        decky.logger.info(
+                            "Sharp Filter Selector: reinforced NIS on %s",
+                            ", ".join(applied),
+                        )
+                    if errors:
+                        decky.logger.warning(
+                            "Sharp Filter Selector: NIS reinforcement errors: %s",
+                            "; ".join(errors),
+                        )
+
+                if fast_passes > 0:
+                    fast_passes -= 1
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            decky.logger.exception(
+                "Sharp Filter Selector: NIS enforcement loop failed"
+            )
 
     async def set_nis_enabled(self, enabled: bool) -> dict:
         if not isinstance(enabled, bool):
             return {"success": False, "error": "Invalid NIS state"}
 
+        self._nis_requested = enabled
+
+        if not enabled:
+            await self._stop_enforcer()
+
         applied, errors = self._write_all(self._engine_properties(enabled))
+
+        if enabled:
+            self._start_enforcer()
+
         if not applied:
             error = (
                 "No accessible Gamescope session was found"
                 if not errors
                 else "; ".join(errors)
             )
-            return {"success": False, "error": error}
+            return {
+                "success": False,
+                "error": error,
+                "enabled": enabled,
+                "engine": "nis" if enabled else "fsr",
+                "enforcing": enabled,
+            }
 
         engine = "nis" if enabled else "fsr"
         decky.logger.info(
-            "Sharp Filter Selector: %s applied on %s",
+            "Sharp Filter Selector: %s applied on %s%s",
             engine,
             ", ".join(applied),
+            " (persistent enforcement enabled)" if enabled else "",
         )
         return {
             "success": True,
@@ -265,6 +396,7 @@ class Plugin:
             "engine": engine,
             "displays": applied,
             "errors": errors,
+            "enforcing": enabled,
         }
 
     async def set_nis_sharpness(self, level: int) -> dict:
@@ -275,8 +407,6 @@ class Plugin:
         ):
             return {"success": False, "error": "Sharpness must be between 0 and 5"}
 
-        # Gamescope's property scale is inverted: lower raw values are sharper.
-        # The plugin exposes an intuitive 0..5 scale to the user.
         raw_value = 20 - (level * 4)
         applied, errors = self._write_all(
             (
@@ -310,7 +440,14 @@ class Plugin:
     async def get_status(self) -> dict:
         displays = self._displays()
         if not displays:
-            return {"success": False, "error": "No accessible Gamescope session was found"}
+            return {
+                "success": False,
+                "error": "No accessible Gamescope session was found",
+                "requested": self._nis_requested,
+                "enforcing": bool(
+                    self._enforce_task and not self._enforce_task.done()
+                ),
+            }
 
         nis_enabled = False
         raw_sharpness: int | None = None
@@ -319,26 +456,11 @@ class Plugin:
 
         for display, uid, gid, environment in displays:
             available.append(display)
+            state = self._nis_state_on_display(display, uid, gid, environment)
 
-            compat = self._read_property(
-                display, uid, gid, environment, "GAMESCOPE_SHARP_FILTER"
+            display_nis = (
+                state["selectorsAreNis"] and state["fsrFeedback"] != 1
             )
-            legacy = self._read_property(
-                display, uid, gid, environment, "GAMESCOPE_SCALING_FILTER"
-            )
-            modern = self._read_property(
-                display, uid, gid, environment, "GAMESCOPE_NEW_SCALING_FILTER"
-            )
-
-            # Prefer official selectors. Fall back to the optional compatibility
-            # selector only if neither official property is available.
-            if modern is not None:
-                display_nis = modern == NEW_SCALING_NIS
-            elif legacy is not None:
-                display_nis = legacy == LEGACY_SCALING_NIS
-            else:
-                display_nis = compat == COMPAT_SCALING_NIS
-
             nis_enabled = nis_enabled or display_nis
 
             for property_name in (
@@ -355,9 +477,11 @@ class Plugin:
             diagnostics.append(
                 {
                     "display": display,
-                    "legacyFilter": legacy,
-                    "newFilter": modern,
-                    "compatFilter": compat,
+                    "legacyFilter": state["legacy"],
+                    "newFilter": state["modern"],
+                    "newScaler": state["scaler"],
+                    "fsrFeedback": state["fsrFeedback"],
+                    "selectorsAreNis": state["selectorsAreNis"],
                 }
             )
 
@@ -369,16 +493,22 @@ class Plugin:
         return {
             "success": True,
             "enabled": nis_enabled,
+            "requested": self._nis_requested,
             "engine": "nis" if nis_enabled else "fsr",
             "level": level,
             "rawValue": raw_sharpness,
             "displays": available,
             "diagnostics": diagnostics,
             "xprop": self._xprop_binary(),
+            "enforcing": bool(
+                self._enforce_task and not self._enforce_task.done()
+            ),
         }
 
     async def _main(self):
         decky.logger.info("Sharp Filter Selector loaded")
 
     async def _unload(self):
+        self._nis_requested = False
+        await self._stop_enforcer()
         decky.logger.info("Sharp Filter Selector unloaded")
