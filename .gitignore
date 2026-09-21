@@ -1,0 +1,24 @@
+# Dependencies / build caches
+node_modules/
+.cache/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*~
+
+# Local build output
+release/
+out/
+
+# Logs
+*.log
