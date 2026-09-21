@@ -169,3 +169,7 @@ BSD 3-Clause. See [LICENSE](LICENSE).
 Built for [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and [Gamescope](https://github.com/ValveSoftware/gamescope).
 
 FSR is an AMD technology. NIS is an NVIDIA technology. This project is an independent community plugin and is not affiliated with or endorsed by Valve, AMD or NVIDIA.
+
+## AI usage disclosure
+
+This project was developed with substantial generative-AI assistance. A majority of the current codebase was written with AI assistance and then iteratively tested and refined on real systems by the maintainer. See **[AI_DISCLOSURE.md](AI_DISCLOSURE.md)** for the full provenance statement.
