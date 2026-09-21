@@ -1,0 +1,10 @@
+{
+  "name": "Sharp Filter Selector",
+  "author": "N3ruk",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["gamescope", "scaling", "fsr", "nis"],
+    "description": "Switch Gamescope scaling between FSR and NIS and adjust sharpening from Decky's Quick Access Menu."
+  }
+}
