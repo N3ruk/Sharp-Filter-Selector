@@ -10,7 +10,7 @@ Está diseñado para **Steam Deck / SteamOS** y sesiones de juego Linux compatib
 
 - Cambiar el escalado de Gamescope entre **FSR** y **NIS** desde Decky Loader.
 - Ajustar la **nitidez de NIS** entre **0 (mínima)** y **5 (máxima)**.
-- Aplicar el filtro a sesiones Gamescope/Xwayland activas.
+- Aplicar el filtro a sesiones Gamescope/Xwayland activas, incluidas configuraciones multi-Xwayland de SteamOS.
 - Recordar el filtro y nivel de nitidez seleccionados.
 - No requiere modificar las opciones de lanzamiento de cada juego.
 - **No sustituye, parchea ni instala Gamescope**.
@@ -77,7 +77,13 @@ Esto permite comparar rápidamente **FSR y NIS en Gamescope** sin mantener difer
 
 ## Cómo funciona
 
-El backend actualiza las propiedades X11 de las sesiones Gamescope/Xwayland activas y aplica los valores correspondientes del filtro de escalado y nitidez.
+El backend utiliza rutas de compatibilidad separadas para que el tratamiento específico de SteamOS no altere el comportamiento validado en Ubuntu/Linux genérico.
+
+- **SteamOS:** detecta los objetivos Xwayland de Gamescope, aplica los selectores de escalado y realiza una transición explícita LINEAR → NIS antes de seleccionar NIS.
+- **Ubuntu / Linux genérico:** conserva la ruta de compatibilidad validada basada en `GAMESCOPE_SHARP_FILTER`.
+- **Nitidez:** el plugin mantiene su propio control NIS de 0 a 5 y lo mapea al rango completo de sharpening de Gamescope.
+
+El frontend utiliza los paquetes públicos soportados por Decky: `@decky/api`, `@decky/ui` y `@decky/rollup`.
 
 El plugin no inyecta librerías gráficas, no modifica los archivos de los juegos y no sustituye Gamescope. Por ello, desinstalarlo no requiere restaurar una instalación modificada de Gamescope.
 
@@ -89,7 +95,7 @@ El plugin está pensado para:
 - **Steam Deck / SteamOS**.
 - Sistemas Linux gaming que ejecuten **Gamescope** con sesiones Xwayland compatibles.
 
-El soporte real depende de que la sesión Gamescope exponga las propiedades de escalado esperadas y de que `xprop` esté disponible.
+La versión 0.3.4 ha sido validada por el mantenedor tanto en Ubuntu + Gamescope como en SteamOS / Steam Deck. En otros sistemas, el soporte depende de que la sesión Gamescope exponga las propiedades de escalado esperadas y de que `xprop` esté disponible.
 
 ## Solución de problemas
 
@@ -107,11 +113,14 @@ Steam/Gamescope puede escribir sobre el mismo estado. Abre de nuevo Sharp Filter
 
 ## Desarrollo
 
-Construir el frontend:
+El frontend está escrito en TypeScript/React y se compila con Rollup usando los paquetes públicos de Decky:
 
 ```bash
+npm install
 npm run build
 ```
+
+El resultado compilado se guarda en `dist/index.js`.
 
 Crear el ZIP para una Release:
 
