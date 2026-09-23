@@ -10,7 +10,7 @@ If you are looking for a **Decky NIS plugin**, a way to switch **FSR vs NIS in G
 
 - Switch Gamescope scaling between **FSR** and **NIS** from Decky Loader.
 - Adjust **NIS sharpness** from **0 (minimum)** to **5 (maximum)**.
-- Apply the selected filter to active Gamescope/Xwayland sessions.
+- Apply the selected filter to active Gamescope/Xwayland sessions, including SteamOS multi-Xwayland setups.
 - Remember the selected filter and sharpness level.
 - No per-game launch-option editing required.
 - Does **not** replace, patch or install Gamescope.
@@ -83,7 +83,13 @@ This makes the plugin useful for quickly comparing **Gamescope FSR and NIS** wit
 
 ## How it works
 
-The backend updates Gamescope's X11 root properties for active Gamescope/Xwayland sessions and applies the corresponding scaling-filter and sharpness values.
+The backend uses separate compatibility paths so SteamOS-specific handling does not alter the validated generic-Linux/Ubuntu behavior.
+
+- **SteamOS:** discovers Gamescope Xwayland targets, applies the Gamescope scaling selectors across them and performs an explicit LINEAR → NIS transition before selecting NIS.
+- **Ubuntu / generic Linux:** keeps the validated compatibility path based on `GAMESCOPE_SHARP_FILTER`.
+- **Sharpness:** the plugin keeps its own 0–5 NIS control and maps it to Gamescope's full sharpening range.
+
+The frontend uses Decky's supported public packages (`@decky/api`, `@decky/ui` and `@decky/rollup`).
 
 The plugin does not inject a graphics library, modify game files or replace Gamescope, so removing it does not require restoring a modified Gamescope installation.
 
@@ -95,7 +101,7 @@ The plugin is intended for:
 - **Steam Deck / SteamOS** gaming sessions.
 - Linux gaming systems running **Gamescope** and compatible Xwayland sessions.
 
-Actual support depends on the Gamescope session exposing the expected scaling properties and on `xprop` being available.
+Version 0.3.4 has been validated by the maintainer on both Ubuntu + Gamescope and SteamOS / Steam Deck. Actual support on other systems depends on the Gamescope session exposing the expected scaling properties and on `xprop` being available.
 
 ## Troubleshooting
 
@@ -113,11 +119,14 @@ Steam/Gamescope can write the same scaling state. Open Sharp Filter Selector and
 
 ## Development
 
-The runtime frontend lives in `src/index.js` and is copied to `dist/index.js` for distribution:
+The frontend source lives in `src/index.tsx` and is built with TypeScript + Rollup using Decky's supported packages.
 
 ```bash
+npm install
 npm run build
 ```
+
+The compiled Decky frontend is written to `dist/index.js`.
 
 Create a release-ready ZIP with:
 
@@ -135,11 +144,13 @@ release/sharp-filter-selector-vX.Y.Z.zip
 
 ```text
 .
-├── dist/index.js       # Decky frontend loaded at runtime
-├── src/index.js        # Readable frontend source
+├── dist/index.js       # Compiled Decky frontend loaded at runtime
+├── src/index.tsx       # TypeScript/React frontend source
 ├── main.py             # Python backend
 ├── plugin.json         # Decky metadata
-├── package.json        # Version and build scripts
+├── package.json        # Version, Decky dependencies and build scripts
+├── rollup.config.js    # Decky Rollup configuration
+├── tsconfig.json       # TypeScript configuration
 ├── install.sh          # Local/source installation helper
 ├── uninstall.sh        # Local uninstall helper
 ├── scripts/package.sh  # Release ZIP builder
