@@ -1,0 +1,80 @@
+name: Publish v0.3.4
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-v0.3.4.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Validate Python backend
+        run: python -m py_compile main.py
+
+      - name: Validate modern Decky frontend source
+        run: |
+          cp dist/index.js /tmp/tested-dist-index.js
+          npm run build
+          test -s dist/index.js
+          cp /tmp/tested-dist-index.js dist/index.js
+
+      - name: Package validated plugin runtime
+        run: npm run package
+
+      - name: Prepare release notes
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          ## Sharp Filter Selector 0.3.4
+
+          Validated release for Ubuntu and SteamOS with the modern Decky Loader API.
+
+          ### Highlights
+
+          - NIS switching is confirmed working on both **Ubuntu** and **SteamOS / Steam Deck**.
+          - SteamOS now discovers and targets Gamescope's multiple Xwayland roots instead of assuming a single display.
+          - SteamOS performs an explicit **LINEAR → NIS** transition before applying the final NIS state.
+          - Ubuntu/Linux keeps its isolated, validated compatibility path based on `GAMESCOPE_SHARP_FILTER`.
+          - Frontend migrated to Decky's supported public packages: `@decky/api`, `@decky/ui` and `@decky/rollup`.
+          - Keeps the plugin's own **0–5 NIS sharpness slider**, mapped to Gamescope's full sharpening range.
+          - Adds Xwayland server/filter diagnostics and FSR feedback verification.
+          - Source frontend is now TypeScript/React with Rollup.
+
+          ### Packaging
+
+          The release keeps the exact runtime frontend and backend validated by the maintainer. Build checks compile the modern TypeScript frontend separately without replacing the tested runtime in the release archive.
+
+          The plugin does **not** replace or patch Gamescope.
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.3.4 \
+            release/sharp-filter-selector-v0.3.4.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sharp Filter Selector 0.3.4" \
+            --notes-file /tmp/release-notes.md
