@@ -8,7 +8,7 @@ out_dir="$root/release"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-mkdir -p "$out_dir" "$stage/$name/dist"
+mkdir -p "$out_dir" "$stage/$name/dist" "$stage/$name/src"
 
 cp "$root/main.py" "$stage/$name/main.py"
 cp "$root/plugin.json" "$stage/$name/plugin.json"
@@ -17,6 +17,9 @@ cp "$root/README.md" "$stage/$name/README.md"
 cp "$root/README_ES.md" "$stage/$name/README_ES.md"
 cp "$root/LICENSE" "$stage/$name/LICENSE"
 cp "$root/dist/index.js" "$stage/$name/dist/index.js"
+cp "$root/src/index.tsx" "$stage/$name/src/index.tsx"
+cp "$root/rollup.config.js" "$stage/$name/rollup.config.js"
+cp "$root/tsconfig.json" "$stage/$name/tsconfig.json"
 
 # Include the portable local installer/uninstaller so GitHub Release users
 # can install the exact packaged build without cloning the repository.
