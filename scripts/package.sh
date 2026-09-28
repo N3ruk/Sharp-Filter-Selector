@@ -15,6 +15,8 @@ cp "$root/plugin.json" "$stage/$name/plugin.json"
 cp "$root/package.json" "$stage/$name/package.json"
 cp "$root/README.md" "$stage/$name/README.md"
 cp "$root/README_ES.md" "$stage/$name/README_ES.md"
+cp "$root/CHANGELOG.md" "$stage/$name/CHANGELOG.md"
+cp "$root/AI_DISCLOSURE.md" "$stage/$name/AI_DISCLOSURE.md"
 cp "$root/LICENSE" "$stage/$name/LICENSE"
 cp "$root/dist/index.js" "$stage/$name/dist/index.js"
 cp "$root/src/index.tsx" "$stage/$name/src/index.tsx"
@@ -35,3 +37,5 @@ rm -f "$archive"
 )
 
 echo "Created: $archive"
+(cd "$out_dir" && sha256sum "$(basename -- "$archive")" > "$(basename -- "$archive").sha256")
+echo "Checksum: $archive.sha256"

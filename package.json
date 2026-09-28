@@ -1,7 +1,7 @@
 {
   "name": "sharp-filter-selector",
-  "version": "0.3.4",
-  "description": "Decky Loader plugin for switching Gamescope scaling between AMD FSR and NVIDIA NIS.",
+  "version": "1.0.0",
+  "description": "Decky Loader plugin for dynamically switching Gamescope Sharp scaling between SGSR, FSR and NIS.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -20,7 +20,8 @@
     "steamos",
     "gamescope",
     "fsr",
-    "nis"
+    "nis",
+    "sgsr"
   ],
   "author": "N3ruk",
   "license": "BSD-3-Clause",

@@ -2,6 +2,47 @@
 
 All notable changes to Sharp Filter Selector are documented here.
 
+## [1.0.0] - 2026-09-28
+
+### Added
+
+- Added native SGSR capability detection against the Gamescope process that
+  owns the active Xwayland session, rather than an unrelated binary in `PATH`.
+- Added an explicit FSR override for SGSR-capable Gamescope builds and a shared
+  0–5 sharpening control for explicit FSR/NIS operation.
+- Added HDR input/output awareness: native Sharp uses SGSR for SDR input and
+  reports the Gamescope FSR fallback when the application supplies HDR input.
+- Added Ubuntu multi-Xwayland discovery and continuous synchronization of the
+  QAM-owned scaler/filter state from authoritative server 0 to sibling roots.
+- Added modern selector support for NIS (`3`), FSR (`2`) and SGSR (`5`).
+
+### Changed
+
+- Ubuntu no longer writes `GAMESCOPE_NEW_SCALING_SCALER` when selecting a
+  filter. Scaling mode remains owned by Steam/QAM (`Auto`, `Fit`, `Integer`,
+  `Stretch`).
+- Steam's historical Sharp value (`2`) is translated to native SGSR (`5`) when
+  the running Gamescope advertises SGSR, while explicit plugin overrides remain
+  NIS or FSR.
+- Frontend state is restored without passive writes that would override the
+  user's current Gamescope/QAM state.
+- Packaged releases now include the installer, uninstaller, changelog, source
+  frontend and AI disclosure, plus a SHA256 checksum.
+
+### Fixed
+
+- Fixed NIS becoming ineffective on modern Gamescope/Xwayland layouts.
+- Fixed QAM scaling modes being overwritten by filter selection.
+- Fixed divergence between Gamescope's multiple Xwayland roots.
+- Fixed false filter reporting around SGSR, explicit FSR and HDR fallback.
+
+### Validated
+
+- Ubuntu 26.04 Gaming Mode with Gamescope 3.16.30, NVIDIA RTX 2060 and multiple
+  Xwayland roots.
+- Native SGSR in SDR, explicit FSR and NIS, HDR fallback reporting, QAM scaling
+  modes, 4K output and VRR.
+
 ## [0.3.4] - 2026-09-24
 
 ### Added

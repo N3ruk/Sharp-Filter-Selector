@@ -1,46 +1,44 @@
-# First GitHub upload
+# GitHub release workflow
 
-Create an empty GitHub repository, then run these commands from this folder:
+The repository is already published at:
 
-```bash
-git init
-git add .
-git commit -m "Initial public release: Sharp Filter Selector 0.3.0"
-git branch -M main
-git remote add origin <YOUR_GITHUB_REPOSITORY_URL>
-git push -u origin main
+```text
+https://github.com/N3ruk/Sharp-Filter-Selector
 ```
 
-## Create the first release
-
-Build the runtime frontend and release ZIP:
+## Build the release assets
 
 ```bash
 npm run build
 npm run package
 ```
 
-Then tag the release:
+The package command creates a portable ZIP and its SHA256 file:
+
+```text
+release/sharp-filter-selector-vX.Y.Z.zip
+release/sharp-filter-selector-vX.Y.Z.zip.sha256
+```
+
+## Publish
+
+After updating `package.json`, `CHANGELOG.md` and both README files:
 
 ```bash
-git tag -a v0.3.0 -m "Sharp Filter Selector 0.3.0"
-git push origin v0.3.0
+git add .
+git commit -m "Release Sharp Filter Selector X.Y.Z"
+git push origin main
+git tag -a vX.Y.Z -m "Sharp Filter Selector X.Y.Z"
+git push origin vX.Y.Z
 ```
 
-On GitHub, create a Release for tag `v0.3.0` and attach:
-
-```text
-release/sharp-filter-selector-v0.3.0.zip
-```
-
-Suggested release title:
-
-```text
-Sharp Filter Selector 0.3.0
-```
+Create the GitHub Release for that tag and attach both generated files. The ZIP
+must contain a single top-level `sharp-filter-selector` directory with
+`install.sh`, `uninstall.sh`, `main.py`, `plugin.json`, `package.json` and
+`dist/index.js`.
 
 Suggested repository topics:
 
 ```text
-decky decky-loader steam-deck steamos gamescope fsr nis linux-gaming
+decky decky-loader steam-deck steamos gamescope sgsr fsr nis linux-gaming
 ```

@@ -1,42 +1,67 @@
-# Sharp Filter Selector — Selector FSR / NIS para Decky Loader y Gamescope
+# Sharp Filter Selector — SGSR / FSR / NIS para Decky Loader
 
-**Sharp Filter Selector** es un plugin para **Decky Loader y Gamescope** que permite cambiar el filtro de escalado activo entre **AMD FidelityFX Super Resolution (FSR)** y **NVIDIA Image Scaling (NIS)** directamente desde el menú de acceso rápido.
+**Sharp Filter Selector** es un plugin de Decky Loader que controla el filtro
+Sharp de Gamescope desde el menú de acceso rápido. En versiones recientes de
+Gamescope conserva **SGSR** como ruta Sharp nativa y ofrece overrides explícitos
+para **AMD FSR** y **NVIDIA NIS**.
 
-Está diseñado para **Steam Deck / SteamOS** y sesiones de juego Linux compatibles que utilicen **Decky Loader + Gamescope**. También incorpora un control sencillo de **nitidez NIS de 0 a 5**, sin necesidad de modificar las opciones de lanzamiento de cada juego.
-
-> English documentation: **[README.md](README.md)**
+[English documentation](README.md)
 
 ## Características
 
-- Cambiar el escalado de Gamescope entre **FSR** y **NIS** desde Decky Loader.
-- Ajustar la **nitidez de NIS** entre **0 (mínima)** y **5 (máxima)**.
-- Aplicar el filtro a sesiones Gamescope/Xwayland activas, incluidas configuraciones multi-Xwayland de SteamOS.
-- Recordar el filtro y nivel de nitidez seleccionados.
-- No requiere modificar las opciones de lanzamiento de cada juego.
-- **No sustituye, parchea ni instala Gamescope**.
+- Detecta soporte SGSR en el proceso Gamescope propietario de la sesión
+  Xwayland activa.
+- Conserva el comportamiento Sharp nativo: SGSR para entrada SDR y fallback FSR
+  de Gamescope para entrada HDR.
+- Ofrece overrides explícitos **Use NIS** y **Use FSR** cuando están soportados.
+- Control compartido de nitidez 0–5 para FSR/NIS explícitos.
+- Sincroniza las distintas raíces Xwayland de Gamescope.
+- Deja el modo de reescalado QAM (`Automático`, `Ajustar`, `Entero`, `Estirar`)
+  bajo control del QAM; en Ubuntu elegir filtro nunca cambia el scaler.
+- Recuerda las selecciones explícitas sin escrituras pasivas al cargar el
+  frontend.
+- No parchea, sustituye ni instala Gamescope.
 
 ## Requisitos
 
-- **Decky Loader**.
-- Una sesión de juego Linux ejecutando **Gamescope**.
+- Decky Loader.
+- Una sesión gaming Gamescope/Xwayland activa.
 - `xprop` disponible en el sistema.
-- Una configuración en la que Gamescope esté realizando realmente un escalado de resolución.
+- Renderizar el juego por debajo de la resolución de salida para apreciar el
+  filtro de escalado.
 
-> Si el juego ya se renderiza a la resolución final de la pantalla, cambiar entre FSR y NIS puede producir poca o ninguna diferencia visible. El plugin selecciona el filtro de escalado; no obliga al juego a renderizar a una resolución inferior.
+El soporte SGSR depende del Gamescope que esté ejecutándose. Si no está
+disponible, el plugin conserva el comportamiento compatible FSR/NIS.
 
 ## Instalación
 
-### Desde GitHub Releases
+### ZIP de GitHub Releases
 
-1. Abre la sección **Releases** del repositorio.
-2. Descarga el último `sharp-filter-selector-vX.Y.Z.zip`.
-3. Instálalo mediante el sistema de instalación/desarrollo de plugins de Decky Loader, o extrae la carpeta `sharp-filter-selector` en el directorio de plugins de Decky.
-4. Recarga Decky Loader o reinicia Gaming Mode/Steam.
+1. Descarga `sharp-filter-selector-v1.0.0.zip` desde la última release.
+2. Extráelo; contiene una única carpeta `sharp-filter-selector`.
+3. Ejecuta el instalador incluido:
 
-Directorio habitual:
+```bash
+cd sharp-filter-selector
+./install.sh
+```
+
+Destino predeterminado:
 
 ```text
 ~/homebrew/plugins/sharp-filter-selector/
+```
+
+Recarga Decky Loader o reinicia Steam/Gaming Mode. Para una ubicación de prueba:
+
+```bash
+DECKY_PLUGIN_DIR=/ruta/a/plugins/sharp-filter-selector ./install.sh
+```
+
+Para desinstalar:
+
+```bash
+./uninstall.sh
 ```
 
 ### Desde el código fuente
@@ -47,103 +72,103 @@ cd Sharp-Filter-Selector
 ./install.sh
 ```
 
-Para desinstalar:
-
-```bash
-./uninstall.sh
-```
-
 ## Uso
 
-1. Inicia un juego dentro de una sesión Gamescope.
-2. Abre el **Quick Access Menu**.
-3. Entra en **Decky Loader → Sharp Filter Selector**.
-4. Activa **Use NIS** para cambiar de FSR a NVIDIA Image Scaling.
-5. Ajusta **NIS sharpness** entre `0` y `5`.
-6. Desactiva **Use NIS** para volver a FSR.
+1. Inicia un juego dentro de Gamescope.
+2. Abre QAM → Decky Loader → Sharp Filter Selector.
+3. Deja ambos overrides apagados para usar Sharp nativo.
+4. Activa **Use NIS** para NVIDIA Image Scaling.
+5. En Gamescope compatible con SGSR, activa **Use FSR** para forzar AMD FSR.
+6. Ajusta **Sharpness** entre 0 y 5 con FSR o NIS explícitos.
 
-La línea de estado muestra el filtro seleccionado y los displays de Gamescope que se han actualizado.
-
-## FSR frente a NIS en Gamescope
-
-Sharp Filter Selector no implementa un escalador propio. Controla el estado de los filtros de escalado expuestos por Gamescope.
-
-- **FSR** = AMD FidelityFX Super Resolution.
-- **NIS** = NVIDIA Image Scaling.
-- El slider de nitidez controla el valor de sharpening utilizado por Gamescope.
-- Los propios controles de escalado de Steam/Gamescope pueden modificar el mismo estado.
-
-Esto permite comparar rápidamente **FSR y NIS en Gamescope** sin mantener diferentes cadenas de opciones de lanzamiento para cada juego.
+Solo puede existir un override explícito activo. La línea de estado muestra el
+motor efectivo y los objetivos Gamescope modificados.
 
 ## Cómo funciona
 
-El backend utiliza rutas de compatibilidad separadas para que el tratamiento específico de SteamOS no altere el comportamiento validado en Ubuntu/Linux genérico.
+### Ubuntu / Linux genérico
 
-- **SteamOS:** detecta los objetivos Xwayland de Gamescope, aplica los selectores de escalado y realiza una transición explícita LINEAR → NIS antes de seleccionar NIS.
-- **Ubuntu / Linux genérico:** conserva la ruta de compatibilidad validada basada en `GAMESCOPE_SHARP_FILTER`.
-- **Nitidez:** el plugin mantiene su propio control NIS de 0 a 5 y lo mapea al rango completo de sharpening de Gamescope.
+El backend descubre los displays Gamescope/Xwayland mediante la ascendencia y
+el entorno de procesos. El servidor Xwayland 0 es la autoridad del QAM. Sus
+valores válidos de scaler y filtro se reflejan en las demás raíces sin cambiar
+el scaler elegido por QAM.
 
-El frontend utiliza los paquetes públicos soportados por Decky: `@decky/api`, `@decky/ui` y `@decky/rollup`.
+En Gamescope 3.16.29+, el valor Sharp histórico `2` del QAM se traduce al
+selector SGSR nativo `5` cuando el proceso Gamescope activo anuncia SGSR. Los
+overrides mantienen NIS `3` o FSR `2`.
 
-El plugin no inyecta librerías gráficas, no modifica los archivos de los juegos y no sustituye Gamescope. Por ello, desinstalarlo no requiere restaurar una instalación modificada de Gamescope.
+### SteamOS
 
-## Compatibilidad
+Se conserva la detección multi-Xwayland y la transición explícita LINEAR → NIS
+ya validadas, añadiendo SGSR nativo y FSR explícito cuando Gamescope lo permite.
 
-El plugin está pensado para:
+### HDR
 
-- Entornos con **Decky Loader**.
-- **Steam Deck / SteamOS**.
-- Sistemas Linux gaming que ejecuten **Gamescope** con sesiones Xwayland compatibles.
+La restricción afecta a la entrada **HDR**, no simplemente a que la salida HDR
+esté activa. Si la aplicación entrega HDR, Gamescope usa su fallback FSR para
+Sharp nativo. Una salida HDR con contenido SDR puede seguir usando SGSR.
 
-La versión 0.3.4 ha sido validada por el mantenedor tanto en Ubuntu + Gamescope como en SteamOS / Steam Deck. En otros sistemas, el soporte depende de que la sesión Gamescope exponga las propiedades de escalado esperadas y de que `xprop` esté disponible.
+## Compatibilidad y validación
+
+La versión 1.0.0 se validó en Ubuntu 26.04 Gaming Mode con Gamescope 3.16.30,
+NVIDIA RTX 2060, varias raíces Xwayland, salida 4K y VRR. Se probaron SGSR nativo
+en SDR, FSR explícito, NIS explícito, información de fallback HDR y todos los
+modos de reescalado QAM.
+
+Otros sistemas necesitan propiedades compatibles de Gamescope y `xprop`. Se
+conserva soporte SteamOS, que debe validarse con sus versiones instaladas de
+Gamescope y Decky.
 
 ## Solución de problemas
 
-**El plugin indica que no encuentra una sesión Gamescope.**  
-Comprueba que estás utilizándolo desde una sesión de juego Gamescope y que existe un display Gamescope/Xwayland activo.
+**No se encontraron objetivos Gamescope**
 
-**El filtro cambia pero la imagen parece igual.**  
-Gamescope debe estar escalando la imagen para que FSR/NIS tenga un efecto visible. Prueba a renderizar el juego por debajo de la resolución de salida.
+Utiliza el plugin dentro de una sesión Gamescope activa y comprueba `xprop`.
 
-**El plugin indica que falta `xprop`.**  
-Instala el paquete que proporciona `xprop` en tu distribución y vuelve a cargar Decky Loader.
+**El filtro cambia pero la imagen parece igual**
 
-**El filtro cambia después de utilizar los controles de escalado de Steam.**  
-Steam/Gamescope puede escribir sobre el mismo estado. Abre de nuevo Sharp Filter Selector y vuelve a aplicar el filtro deseado.
+Gamescope debe estar reescalando. Renderiza el juego por debajo de la resolución
+final.
 
-## Desarrollo
+**Sharp nativo muestra FSR en vez de SGSR**
 
-El frontend está escrito en TypeScript/React y se compila con Rollup usando los paquetes públicos de Decky:
+Es normal con entrada HDR o cuando el Gamescope activo no anuncia SGSR.
+
+**El modo de reescalado QAM no modifica la imagen**
+
+El plugin no controla ese modo. Revisa Gamescope y la integración QAM; elegir un
+filtro deliberadamente no sobrescribe el scaler.
+
+## Desarrollo y empaquetado
 
 ```bash
 npm install
 npm run build
-```
-
-El resultado compilado se guarda en `dist/index.js`.
-
-Crear el ZIP para una Release:
-
-```bash
 npm run package
 ```
 
-El resultado se guarda como:
+Se generan:
 
 ```text
 release/sharp-filter-selector-vX.Y.Z.zip
+release/sharp-filter-selector-vX.Y.Z.zip.sha256
 ```
 
-## Licencia
+El ZIP incluye runtime compilado, fuente del frontend, instalador y
+desinstalador portables, README, changelog y licencia.
 
-BSD 3-Clause. Consulta **[LICENSE](LICENSE)**.
+Las releases usan el `dist/index.js` validado y guardado en el repositorio. Como
+las dependencias de Decky pueden cambiar el wrapper generado, revisa y prueba un
+nuevo `npm run build` antes de sustituir ese bundle validado.
 
-## Agradecimientos
+## Licencia y divulgación
 
-Desarrollado para [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) y [Gamescope](https://github.com/ValveSoftware/gamescope).
+BSD 3-Clause. Consulta [LICENSE](LICENSE).
 
-FSR es una tecnología de AMD y NIS una tecnología de NVIDIA. Este proyecto es un plugin independiente de la comunidad y no está afiliado ni respaldado por Valve, AMD o NVIDIA.
+Desarrollado para [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)
+y [Gamescope](https://github.com/ValveSoftware/gamescope). FSR, NIS y SGSR son
+tecnologías de sus respectivos propietarios. Este plugin comunitario es
+independiente y no está afiliado ni respaldado por Valve, AMD o NVIDIA.
 
-## Divulgación sobre uso de IA
-
-Este proyecto se desarrolló con una asistencia sustancial de IA generativa. La IA escribió la mayoría del código actual, que posteriormente fue probado, depurado y refinado de forma iterativa por el mantenedor en sistemas reales. Consulta **[AI_DISCLOSURE.md](AI_DISCLOSURE.md)** para ver la declaración completa de procedencia.
+Consulta [AI_DISCLOSURE.md](AI_DISCLOSURE.md) para la procedencia de la
+asistencia de IA empleada en el proyecto.

@@ -48,8 +48,8 @@ Full disclosure:
 
 Sharp Filter Selector:
 
-- switches Gamescope scaling between AMD FSR and NVIDIA NIS from Decky's Quick Access Menu;
-- exposes NIS sharpening control;
+- controls Gamescope Sharp scaling between native SGSR, AMD FSR and NVIDIA NIS from Decky's Quick Access Menu;
+- exposes shared FSR/NIS sharpening control;
 - uses Decky's Python backend;
 - discovers active Gamescope/Xwayland sessions;
 - updates Gamescope scaling properties using `xprop`;
@@ -85,7 +85,7 @@ Because this project is majority AI-assisted, the maintainer will request an exp
 >
 > The current public version has been tested during development in real Gamescope / Steam Deck / Linux environments, but I am **not** claiming Store-required Stable/Beta or third-party verification until those checks are completed.
 >
-> Sharp Filter Selector switches Gamescope scaling between AMD FSR and NVIDIA NIS from Decky's Quick Access Menu, exposes NIS sharpening, uses the standard Decky Python backend, and invokes the system-provided `xprop`. It does not patch or ship Gamescope.
+> Sharp Filter Selector controls Gamescope Sharp scaling between native SGSR, AMD FSR and NVIDIA NIS from Decky's Quick Access Menu, exposes shared FSR/NIS sharpening, uses the standard Decky Python backend, and invokes the system-provided `xprop`. It does not patch or ship Gamescope.
 >
 > Because the project does not satisfy the current AI checklist item, I do not want to submit a normal PR that misrepresents its provenance.
 >

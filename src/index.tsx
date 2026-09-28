@@ -22,26 +22,53 @@ type BackendResult = {
   error?: string;
   enabled?: boolean;
   requested?: boolean;
+  fsrOverride?: boolean;
   enforcing?: boolean;
+  engine?: string;
+  selectedEngine?: string;
   level?: number | null;
   rawValue?: number | null;
   displays?: string[];
   diagnostics?: Diagnostic[];
 };
 
+type CapabilityResult = {
+  success: boolean;
+  gamescopePid?: number | null;
+  gamescopeExecutable?: string | null;
+  gamescopeVersion?: string | null;
+  supportsSGSR?: boolean;
+  sgsrEvidence?: string;
+  hdrInput?: boolean;
+  hdrInputKnown?: boolean;
+  hdrOutputEnabled?: boolean;
+  hdrSource?: string;
+  nativeSharpEngine?: string;
+  showFsrOverride?: boolean;
+  steamos?: boolean;
+  errors?: string[];
+};
+
 const setNisEnabled = callable<[enabled: boolean], BackendResult>("set_nis_enabled");
+const setFsrOverride = callable<[enabled: boolean], BackendResult>("set_fsr_override");
 const setNisSharpness = callable<[level: number], BackendResult>("set_nis_sharpness");
 const getStatus = callable<[], BackendResult>("get_status");
+const getCapabilities = callable<[], CapabilityResult>("get_capabilities");
 
-const ENABLED_KEY = "sharp-filter-nis-enabled";
-const SHARPNESS_KEY = "sharp-filter-nis-sharpness";
+const NIS_ENABLED_KEY = "sharp-filter-nis-enabled";
+const NIS_SHARPNESS_KEY = "sharp-filter-nis-sharpness";
+const FSR_OVERRIDE_KEY = "sharp-filter-fsr-override";
 
-function storedEnabled(): boolean {
-  return localStorage.getItem(ENABLED_KEY) === "true";
+function storedNisEnabled(): boolean {
+  return localStorage.getItem(NIS_ENABLED_KEY) === "true";
+}
+
+function storedFsrOverride(): boolean {
+  return localStorage.getItem(FSR_OVERRIDE_KEY) === "true";
 }
 
 function storedSharpness(): number {
-  const value = Number(localStorage.getItem(SHARPNESS_KEY));
+  const value = Number(localStorage.getItem(NIS_SHARPNESS_KEY));
   return Number.isInteger(value) && value >= 0 && value <= 5 ? value : 5;
 }
 
@@ -65,16 +92,39 @@ function targetSummary(result: BackendResult): string {
     .join(" · ");
 }
 
+function nativeLabel(capabilities: CapabilityResult | null): string {
+  if (!capabilities?.supportsSGSR) return "FSR";
+  return capabilities.hdrInput ? "FSR (HDR fallback)" : "SGSR";
+}
+
 function Content() {
-  const [nisEnabled, setNisEnabledState] = useState<boolean>(storedEnabled);
+  const [nisEnabled, setNisEnabledState] = useState<boolean>(storedNisEnabled);
+  const [fsrOverride, setFsrOverrideState] = useState<boolean>(storedFsrOverride);
   const [sharpness, setSharpnessState] = useState<number>(storedSharpness);
+  const [capabilities, setCapabilities] = useState<CapabilityResult | null>(null);
   const [status, setStatus] = useState<string>("Checking Gamescope…");
 
-  const describe = (enabled: boolean, level: number, displays?: string[]) => {
+  const describe = (
+    nis: boolean,
+    fsr: boolean,
+    level: number,
+    displays?: string[],
+    caps: CapabilityResult | null = capabilities,
+  ) => {
     const targets = displays?.length ? ` (${displays.join(", ")})` : "";
-    return enabled
-      ? `NIS active · sharpness ${level}/5${targets}`
-      : `NIS disabled · FSR active${targets}`;
+    if (nis) return `NIS active · sharpness ${level}/5${targets}`;
+    if (fsr) return `FSR override active · sharpness ${level}/5${targets}`;
+    return `Sharp native · ${nativeLabel(caps)}${targets}`;
+  };
+
+  const refreshCapabilities = async (): Promise<CapabilityResult | null> => {
+    try {
+      const result = await getCapabilities();
+      setCapabilities(result);
+      return result;
+    } catch {
+      return null;
+    }
   };
 
   const verifyNis = async (level: number, fallbackDisplays?: string[]) => {
@@ -100,12 +150,13 @@ function Content() {
           setStatus(
             targets
               ? `NIS failed · targets ${targets}`
-              : "NIS failed · SteamOS targets found but NIS is not active",
+              : "NIS failed · Gamescope targets found but NIS is not active",
           );
         } else {
           setStatus(
             describe(
               Boolean(result.enabled),
+              Boolean(result.fsrOverride),
               Number.isInteger(result.level) ? Number(result.level) : level,
               result.displays ?? fallbackDisplays,
             ),
@@ -120,8 +171,8 @@ function Content() {
     return false;
   };
 
-  const applyEnabled = async (enabled: boolean) => {
-    setStatus(enabled ? "Applying NIS to all Xwayland targets…" : "Restoring FSR…");
+  const applyNis = async (enabled: boolean) => {
+    setStatus(enabled ? "Applying NIS…" : "Restoring native Sharp filter…");
 
     try {
       const engineResult = await setNisEnabled(enabled);
@@ -138,17 +189,52 @@ function Content() {
           return;
         }
         displays = sharpnessResult.displays;
+        localStorage.setItem(FSR_OVERRIDE_KEY, "false");
+        setFsrOverrideState(false);
       }
 
-      localStorage.setItem(ENABLED_KEY, String(enabled));
+      localStorage.setItem(NIS_ENABLED_KEY, String(enabled));
       setNisEnabledState(enabled);
 
+      const caps = await refreshCapabilities();
       if (enabled) {
-        setStatus("NIS requested · verifying all Xwaylands…");
+        setStatus("NIS requested · verifying…");
         await verifyNis(sharpness, displays);
       } else {
-        setStatus(describe(false, sharpness, displays));
+        setStatus(describe(false, false, sharpness, displays, caps ?? capabilities));
       }
+    } catch (error) {
+      setStatus(`Error: ${String(error)}`);
+    }
+  };
+
+  const applyFsr = async (enabled: boolean) => {
+    setStatus(enabled ? "Applying FSR override…" : "Restoring native SGSR…");
+
+    try {
+      const result = await setFsrOverride(enabled);
+      if (!result.success) {
+        setStatus(result.error || "Could not change the FSR override");
+        return;
+      }
+
+      let displays = result.displays;
+      if (enabled) {
+        const sharpnessResult = await setNisSharpness(sharpness);
+        if (!sharpnessResult.success) {
+          setStatus(sharpnessResult.error || "Could not apply FSR sharpness");
+          return;
+        }
+        displays = sharpnessResult.displays;
+        localStorage.setItem(NIS_ENABLED_KEY, "false");
+        setNisEnabledState(false);
+      }
+
+      localStorage.setItem(FSR_OVERRIDE_KEY, String(enabled));
+      setFsrOverrideState(enabled);
+
+      const caps = await refreshCapabilities();
+      setStatus(describe(false, enabled, sharpness, displays, caps ?? capabilities));
     } catch (error) {
       setStatus(`Error: ${String(error)}`);
     }
@@ -157,19 +243,23 @@ function Content() {
   const applySharpness = async (value: number) => {
     const level = Math.max(0, Math.min(5, Math.round(value)));
     setSharpnessState(level);
-    localStorage.setItem(SHARPNESS_KEY, String(level));
+    localStorage.setItem(NIS_SHARPNESS_KEY, String(level));
 
-    if (!nisEnabled) return;
+    if (!nisEnabled && !fsrOverride) return;
 
-    setStatus("Applying sharpness…");
+    setStatus(nisEnabled ? "Applying NIS sharpness…" : "Applying FSR sharpness…");
     try {
       const result = await setNisSharpness(level);
       if (!result.success) {
-        setStatus(result.error || "Could not apply NIS sharpness");
+        setStatus(result.error || "Could not apply filter sharpness");
         return;
       }
-      setStatus(`NIS requested · sharpness ${level}/5 · verifying…`);
-      await verifyNis(level, result.displays);
+      if (nisEnabled) {
+        setStatus(`NIS requested · sharpness ${level}/5 · verifying…`);
+        await verifyNis(level, result.displays);
+      } else {
+        setStatus(describe(false, true, level, result.displays));
+      }
     } catch (error) {
       setStatus(`Error: ${String(error)}`);
     }
@@ -177,38 +267,83 @@ function Content() {
 
   useEffect(() => {
     let mounted = true;
-    const desiredEnabled = storedEnabled();
-    const desiredSharpness = storedSharpness();
+    let timer: ReturnType<typeof setInterval> | undefined;
 
     const initialize = async () => {
       try {
-        const engineResult = await setNisEnabled(desiredEnabled);
+        const caps = await getCapabilities();
         if (!mounted) return;
-        if (!engineResult.success) {
-          setStatus(engineResult.error || "Available in a Gamescope session");
-          return;
+        setCapabilities(caps);
+
+        const desiredNis = storedNisEnabled();
+        let desiredFsr = storedFsrOverride();
+        const desiredSharpness = storedSharpness();
+
+        if (caps.success && !caps.supportsSGSR && desiredFsr) {
+          desiredFsr = false;
+          localStorage.setItem(FSR_OVERRIDE_KEY, "false");
         }
 
-        let displays = engineResult.displays;
-        if (desiredEnabled) {
+        if (desiredNis) {
+          const engineResult = await setNisEnabled(true);
+          if (!mounted) return;
+          if (!engineResult.success) {
+            setStatus(engineResult.error || "Available in a Gamescope session");
+            return;
+          }
+
           const sharpnessResult = await setNisSharpness(desiredSharpness);
           if (!mounted) return;
           if (!sharpnessResult.success) {
             setStatus(sharpnessResult.error || "Could not apply NIS sharpness");
             return;
           }
-          displays = sharpnessResult.displays;
-        }
 
-        setNisEnabledState(desiredEnabled);
-        setSharpnessState(desiredSharpness);
-
-        if (desiredEnabled) {
-          setStatus("NIS requested · verifying all Xwaylands…");
-          await verifyNis(desiredSharpness, displays);
+          localStorage.setItem(FSR_OVERRIDE_KEY, "false");
+          setFsrOverrideState(false);
+          setNisEnabledState(true);
+          setSharpnessState(desiredSharpness);
+          setStatus("NIS requested · verifying…");
+          await verifyNis(desiredSharpness, sharpnessResult.displays);
+        } else if (desiredFsr && caps.supportsSGSR) {
+          const result = await setFsrOverride(true);
+          if (!mounted) return;
+          if (!result.success) {
+            setStatus(result.error || "Could not restore FSR override");
+            return;
+          }
+          const sharpnessResult = await setNisSharpness(desiredSharpness);
+          if (!mounted) return;
+          if (!sharpnessResult.success) {
+            setStatus(sharpnessResult.error || "Could not apply FSR sharpness");
+            return;
+          }
+          setNisEnabledState(false);
+          setFsrOverrideState(true);
+          setSharpnessState(desiredSharpness);
+          setStatus(describe(false, true, desiredSharpness, sharpnessResult.displays ?? result.displays, caps));
+        } else if (caps.success) {
+          // Passive initialization must never overwrite the filter or scaler
+          // currently selected by Steam/QAM.
+          setNisEnabledState(false);
+          setFsrOverrideState(false);
+          setSharpnessState(desiredSharpness);
+          setStatus(describe(false, false, desiredSharpness, undefined, caps));
         } else {
-          setStatus(describe(false, desiredSharpness, displays));
+          setNisEnabledState(false);
+          setFsrOverrideState(false);
+          setSharpnessState(desiredSharpness);
+          setStatus("Gamescope capability detection unavailable");
         }
+
+        timer = setInterval(async () => {
+          try {
+            const next = await getCapabilities();
+            if (mounted) setCapabilities(next);
+          } catch {
+            // Keep the last known capability state; never expose SGSR on uncertainty.
+          }
+        }, 1500);
       } catch (error) {
         if (!mounted) return;
         setStatus(`Error: ${String(error)}`);
@@ -218,8 +353,12 @@ function Content() {
     void initialize();
     return () => {
       mounted = false;
+      if (timer !== undefined) clearInterval(timer);
     };
   }, []);
+
+  const showFsrOverride = Boolean(capabilities?.showFsrOverride);
+  const supportsSgsr = Boolean(capabilities?.supportsSGSR);
 
   return (
     <PanelSection title="Sharp Filter">
@@ -228,24 +367,39 @@ function Content() {
           label="Use NIS"
           description={
             nisEnabled
-              ? "SteamOS: target every Gamescope Xwayland and force a real NIS transition."
-              : "AMD FidelityFX Super Resolution is the selected Gamescope filter."
+              ? "Override the native Sharp filter with NVIDIA Image Scaling."
+              : `Native Sharp filter: ${nativeLabel(capabilities)}.`
           }
           checked={nisEnabled}
-          onChange={applyEnabled}
+          onChange={applyNis}
         />
       </PanelSectionRow>
 
+      {showFsrOverride && (
+        <PanelSectionRow>
+          <ToggleField
+            label="Use FSR"
+            description={
+              fsrOverride
+                ? "Override SGSR with AMD FidelityFX Super Resolution."
+                : "Leave this off to use Gamescope's native SGSR Sharp filter."
+            }
+            checked={fsrOverride}
+            onChange={applyFsr}
+          />
+        </PanelSectionRow>
+      )}
+
       <PanelSectionRow>
         <SliderField
-          label={`NIS sharpness (${sharpness}/5)`}
-          description="0 applies minimum sharpening; 5 applies maximum sharpening."
+          label={`Sharpness (${sharpness}/5)`}
+          description="Shared FSR/NIS sharpening: 0 minimum, 5 maximum. Disabled when using native Sharp/SGSR."
           value={sharpness}
           min={0}
           max={5}
           step={1}
           notchCount={6}
-          disabled={!nisEnabled}
+          disabled={!nisEnabled && !fsrOverride}
           onChange={applySharpness}
         />
       </PanelSectionRow>
@@ -253,6 +407,9 @@ function Content() {
       <PanelSectionRow>
         <div style={{ fontSize: "12px", opacity: 0.8, padding: "4px 0 8px" }}>
           {status}
+          {supportsSgsr && capabilities?.gamescopeVersion
+            ? ` · Gamescope ${capabilities.gamescopeVersion}`
+            : ""}
         </div>
       </PanelSectionRow>
     </PanelSection>
