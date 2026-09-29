@@ -2,6 +2,26 @@
 
 All notable changes to Sharp Filter Selector are documented here.
 
+## [1.1.0] - 2026-09-29
+
+### Fixed
+
+- FSR visibility now depends exclusively on the active application's
+  `GAMESCOPE_COLOR_APP_WANTS_HDR_FEEDBACK`, never on display HDR mode.
+- SDR content on HDR output retains both FSR and NIS controls.
+- Missing, invalid or conflicting application feedback keeps FSR visible on
+  SGSR-capable builds. A failed frontend refresh clears stale HDR gating.
+- NIS availability, filter/scaler writes and sharpening mappings are unchanged.
+
+### Validation
+
+- Automated HDR visibility matrix and HDR/SDR/unknown transition tests.
+- Physical Ubuntu Gaming Mode game/QAM test on Gamescope 3.16.30, 4K HDR
+  output and NVIDIA RTX 2060: SDR application input retained both FSR and NIS,
+  and application HDR feedback—not display HDR mode—controlled FSR visibility.
+- Existing SGSR, explicit FSR/NIS, sharpness and QAM scaling paths remained
+  operational after the transition test.
+
 ## [1.0.0] - 2026-09-28
 
 ### Added

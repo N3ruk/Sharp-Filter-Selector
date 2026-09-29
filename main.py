@@ -11,6 +11,9 @@ Compatibility policy:
 - Gamescope builds that advertise SGSR gain a dynamic native-Sharp path:
   Steam's Sharp value 5 is restored for SGSR in SDR and Gamescope performs its
   own FSR fallback for HDR input.
+- FSR override visibility follows fresh, unambiguous application HDR feedback;
+  display HDR alone never hides it. Unknown feedback fails open so an SDR game
+  on an HDR output keeps both explicit FSR and NIS controls available.
 
 SGSR support is detected from the Gamescope process that owns the active
 Xwayland session, never from a possibly unrelated gamescope in PATH.
@@ -963,19 +966,22 @@ class Plugin:
             "GAMESCOPE_DISPLAY_HDR_ENABLED"
         )
 
-        app_known = bool(app_values)
-        app_hdr = any(value == 1 for value in app_values)
+        # Only unambiguous application feedback can hide the FSR override.
+        # Missing/invalid/conflicting feedback is unknown, not display HDR.
+        app_known = bool(app_values) and all(
+            value in (0, 1) for value in app_values
+        ) and len(set(app_values)) == 1
+        app_hdr = app_known and app_values[0] == 1
         output_hdr = any(value == 1 for value in output_values)
 
-        # SGSR's real restriction is HDR input. Older/custom Gamescope builds may
-        # not expose app-wants-HDR feedback, so the output toggle is a conservative
-        # fallback only when the app-specific property is unavailable.
-        hdr_input = app_hdr if app_known else output_hdr
+        # Output state is diagnostic only. SDR games can run on HDR output.
+        # Read fresh feedback every time; do not retain HDR across game changes.
+        hdr_input = app_hdr
         return {
             "hdrInput": hdr_input,
             "hdrInputKnown": app_known,
             "hdrOutputEnabled": output_hdr,
-            "hdrSource": "app" if app_known else ("output" if output_values else "unknown"),
+            "hdrSource": "app" if app_known else "unknown",
         }
 
     def _native_sharp_engine(self) -> str:

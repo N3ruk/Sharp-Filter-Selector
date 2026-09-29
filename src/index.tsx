@@ -104,6 +104,14 @@ function Content() {
   const [capabilities, setCapabilities] = useState<CapabilityResult | null>(null);
   const [status, setStatus] = useState<string>("Checking Gamescope…");
 
+  const clearHdrFeedback = () => setCapabilities((previous) => previous ? {
+    ...previous,
+    hdrInput: false,
+    hdrInputKnown: false,
+    hdrSource: "unknown",
+    showFsrOverride: Boolean(previous.supportsSGSR),
+  } : previous);
+
   const describe = (
     nis: boolean,
     fsr: boolean,
@@ -123,6 +131,7 @@ function Content() {
       setCapabilities(result);
       return result;
     } catch {
+      clearHdrFeedback();
       return null;
     }
   };
@@ -341,7 +350,8 @@ function Content() {
             const next = await getCapabilities();
             if (mounted) setCapabilities(next);
           } catch {
-            // Keep the last known capability state; never expose SGSR on uncertainty.
+            // Keep SGSR capability, but do not hide FSR using stale HDR feedback.
+            if (mounted) clearHdrFeedback();
           }
         }, 1500);
       } catch (error) {

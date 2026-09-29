@@ -19,6 +19,7 @@ Thumbs.db
 # Local build output
 release/
 out/
+dist/*.map
 
 # Logs
 *.log

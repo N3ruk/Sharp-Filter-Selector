@@ -37,7 +37,8 @@ disponible, el plugin conserva el comportamiento compatible FSR/NIS.
 
 ### ZIP de GitHub Releases
 
-1. Descarga `sharp-filter-selector-v1.0.0.zip` desde la última release.
+1. Descarga el ZIP de la versión deseada (por ejemplo,
+   `sharp-filter-selector-v1.1.0.zip`).
 2. Extráelo; contiene una única carpeta `sharp-filter-selector`.
 3. Ejecuta el instalador incluido:
 
@@ -108,12 +109,24 @@ La restricción afecta a la entrada **HDR**, no simplemente a que la salida HDR
 esté activa. Si la aplicación entrega HDR, Gamescope usa su fallback FSR para
 Sharp nativo. Una salida HDR con contenido SDR puede seguir usando SGSR.
 
+Desde 1.1.0, solo `GAMESCOPE_COLOR_APP_WANTS_HDR_FEEDBACK` condiciona la
+ocultación por HDR. Si falta, es inválido o contradictorio, se considera
+desconocido: FSR y NIS siguen disponibles si Gamescope admite SGSR,
+independientemente del HDR de la pantalla. Abrir QAM no activa por sí mismo
+esta condición; se consulta la señal actual sin conservar HDR de otro juego.
+
 ## Compatibilidad y validación
 
-La versión 1.0.0 se validó en Ubuntu 26.04 Gaming Mode con Gamescope 3.16.30,
-NVIDIA RTX 2060, varias raíces Xwayland, salida 4K y VRR. Se probaron SGSR nativo
-en SDR, FSR explícito, NIS explícito, información de fallback HDR y todos los
-modos de reescalado QAM.
+La versión 1.1.0 se validó en Ubuntu 26.04 Gaming Mode con Gamescope 3.16.30,
+NVIDIA RTX 2060, varias raíces Xwayland, salida 4K y VRR. Una prueba física con
+juego y QAM confirmó que un juego SDR sobre una salida HDR conserva FSR y NIS,
+y que la transición de visibilidad de FSR depende de la señal HDR de la
+aplicación, no del interruptor HDR de pantalla. SGSR nativo, FSR/NIS explícitos,
+el ajuste de nitidez 0–5 y todos los modos de reescalado QAM siguen operativos.
+
+La batería automatizada cubre además señal SDR, HDR, ausente, inválida y
+contradictoria, fallos de refresco del frontend y el mapeo completo de nitidez
+FSR/NIS. No simula Gamescope ni sustituye la validación física anterior.
 
 Otros sistemas necesitan propiedades compatibles de Gamescope y `xprop`. Se
 conserva soporte SteamOS, que debe validarse con sus versiones instaladas de
