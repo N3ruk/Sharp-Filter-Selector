@@ -1,150 +1,40 @@
 # Changelog
 
-All notable changes to Sharp Filter Selector are documented here.
+## 1.2.0 — 2026-10-24
 
-## [1.2.0] - 2026-10-24
+- SteamOS-only QAM Sharp `2` → SGSR `5` bridge for compatible active Gamescope.
+- Restricted `/proc/PID/exe` detection corrected without root or PATH substitution.
+- Modern SteamOS filter changes preserve QAM scaling; NIS/FSR share one bridge.
+- Explicit SGSR status, reliable capability refresh and full Gamescope version display.
+- Ubuntu/UGM's twelve `_ubuntu*` methods, legacy SteamOS behavior and HDR policy preserved.
+- 48 automated tests; maintainer-confirmed operation on SteamOS 3.9.5 / Gamescope 3.16.30.1.
+- Documentation refresh: concise EN/ES README, two technical guides, bilingual release
+  notes and a lean installation ZIP. Runtime/version/tag unchanged by this cleanup.
 
-### Added
+[Compatibility, comparison with 1.1.0 and validation](docs/COMPATIBILITY.md)
 
-- Independent SteamOS QAM bridge on SGSR-capable active Gamescope: translate
-  Sharp selector `2` to SGSR `5` and synchronize sibling Xwayland roots.
-- Checks every 750 ms plus X11 response time: delayed promotion, not an atomic
-  Gamescope patch. Linear, Nearest and Pixel are unchanged with overrides off.
-- Backend/frontend tests, type checking, and build/test inputs in the ZIP.
+## 1.1.0 — 2026-09-29
 
-### Fixed
+- FSR visibility follows fresh application HDR feedback, not display HDR mode.
+- SDR on HDR output retains FSR/NIS; missing/conflicting feedback fails open.
+- Existing filter/scaler/sharpening behavior preserved; Ubuntu Gaming validation.
 
-- SteamOS file-capability Gamescope can deny `/proc/PID/exe` access to the
-  unprivileged plugin. Probe its observed absolute argv executable only when
-  it is an unchanged, root-owned ELF in non-writable directories and predates
-  the process. Never guess from PATH; no root plugin permission is added.
-- Show SGSR detection state explicitly in the UI and log bridge state changes
-  so detection failures cannot silently look like a FSR/NIS-only build.
-- Modern SteamOS NIS/FSR and native Sharp selection no longer reset QAM's scaler
-  or write competing legacy selectors. Modern overrides share one bridge.
-- Capability refresh continues even if stored-preference restoration initially
-  fails without active Gamescope. Desktop Mode no longer labels unknown support FSR.
-- Four-part Gamescope versions, such as `3.16.30.1`, are reported completely.
+## 1.0.0 — 2026-09-28
 
-### Compatibility and validation
+- Active-process SGSR capability detection, explicit FSR override and HDR awareness.
+- Ubuntu QAM/server-0 synchronization and modern FSR/NIS/SGSR selectors.
+- Shared 0–5 sharpening; QAM scaler ownership and passive frontend initialization.
 
-- All twelve Ubuntu-specific methods remain unchanged from 1.1.0 and the plugin
-  bundled with Ubuntu-Gaming-Mode. No UGM repository files are changed.
-- Old SteamOS retains its validated LINEAR → NIS transition and legacy property
-  behavior. Application-HDR visibility rules are unchanged.
-- Automated tests cover all six filters, five scalers, both overrides, recovery,
-  shutdown, HDR reporting and both frontend controls.
-- 48 automated tests passed (41 Python + 7 frontend), plus TypeScript, Rollup,
-  syntax and release-package checks.
-- SteamOS 3.9.5 / Gamescope 3.16.30.1: the maintainer confirmed correct operation
-  after testing the corrected plugin on 2026-10-24. This is functional user
-  validation, not an independent GPU trace or a complete physical HDR matrix.
-- See `docs/validation-1.2.0.md` and `docs/comparison-1.1.0-to-1.2.0.md`.
+## 0.3.4 — 2026-09-24
 
-## [1.1.0] - 2026-09-29
+- Multi-Xwayland SteamOS discovery and LINEAR → NIS transition.
+- Modern Decky frontend and richer filter diagnostics.
+- Separate Ubuntu compatibility route; NIS confirmed on Ubuntu and SteamOS.
 
-### Fixed
+## 0.3.1 — 2026-09-22
 
-- FSR visibility now depends exclusively on the active application's
-  `GAMESCOPE_COLOR_APP_WANTS_HDR_FEEDBACK`, never on display HDR mode.
-- SDR content on HDR output retains both FSR and NIS controls.
-- Missing, invalid or conflicting application feedback keeps FSR visible on
-  SGSR-capable builds. A failed frontend refresh clears stale HDR gating.
-- NIS availability, filter/scaler writes and sharpening mappings are unchanged.
+- SteamOS NIS enforcement, legacy/modern selectors and FSR feedback verification.
 
-### Validation
+## 0.3.0 — 2026-09-21
 
-- Automated HDR visibility matrix and HDR/SDR/unknown transition tests.
-- Physical Ubuntu Gaming Mode game/QAM test on Gamescope 3.16.30, 4K HDR
-  output and NVIDIA RTX 2060: SDR application input retained both FSR and NIS,
-  and application HDR feedback—not display HDR mode—controlled FSR visibility.
-- Existing SGSR, explicit FSR/NIS, sharpness and QAM scaling paths remained
-  operational after the transition test.
-
-## [1.0.0] - 2026-09-28
-
-### Added
-
-- Added native SGSR capability detection against the Gamescope process that
-  owns the active Xwayland session, rather than an unrelated binary in `PATH`.
-- Added an explicit FSR override for SGSR-capable Gamescope builds and a shared
-  0–5 sharpening control for explicit FSR/NIS operation.
-- Added HDR input/output awareness: native Sharp uses SGSR for SDR input and
-  reports the Gamescope FSR fallback when the application supplies HDR input.
-- Added Ubuntu multi-Xwayland discovery and continuous synchronization of the
-  QAM-owned scaler/filter state from authoritative server 0 to sibling roots.
-- Added modern selector support for NIS (`3`), FSR (`2`) and SGSR (`5`).
-
-### Changed
-
-- Ubuntu no longer writes `GAMESCOPE_NEW_SCALING_SCALER` when selecting a
-  filter. Scaling mode remains owned by Steam/QAM (`Auto`, `Fit`, `Integer`,
-  `Stretch`).
-- Steam's historical Sharp value (`2`) is translated to native SGSR (`5`) when
-  the running Gamescope advertises SGSR, while explicit plugin overrides remain
-  NIS or FSR.
-- Frontend state is restored without passive writes that would override the
-  user's current Gamescope/QAM state.
-- Packaged releases now include the installer, uninstaller, changelog, source
-  frontend and AI disclosure, plus a SHA256 checksum.
-
-### Fixed
-
-- Fixed NIS becoming ineffective on modern Gamescope/Xwayland layouts.
-- Fixed QAM scaling modes being overwritten by filter selection.
-- Fixed divergence between Gamescope's multiple Xwayland roots.
-- Fixed false filter reporting around SGSR, explicit FSR and HDR fallback.
-
-### Validated
-
-- Ubuntu 26.04 Gaming Mode with Gamescope 3.16.30, NVIDIA RTX 2060 and multiple
-  Xwayland roots.
-- Native SGSR in SDR, explicit FSR and NIS, HDR fallback reporting, QAM scaling
-  modes, 4K output and VRR.
-
-## [0.3.4] - 2026-09-24
-
-### Added
-
-- Added a SteamOS-specific multi-Xwayland path that discovers Gamescope Xwayland targets and their authentication context.
-- Added an explicit LINEAR → NIS transition on SteamOS before applying the final NIS selector state.
-- Added richer in-plugin diagnostics for Gamescope filter state, Xwayland server IDs and FSR feedback.
-- Added TypeScript/Rollup source and build configuration for the modern Decky frontend.
-
-### Changed
-
-- Migrated the frontend to Decky's supported public packages: `@decky/api`, `@decky/ui` and `@decky/rollup`.
-- Kept Ubuntu/generic Linux on its validated compatibility path using `GAMESCOPE_SHARP_FILTER` for FSR/NIS selection, isolated from SteamOS-specific logic.
-- Preserved the plugin's own 0–5 NIS sharpness slider, mapping the full Gamescope sharpness range independently of Steam's native FSR control.
-- Updated repository checks and release packaging for the TypeScript/Rollup frontend.
-
-### Fixed
-
-- NIS activation is now confirmed working by the maintainer on both Ubuntu and SteamOS with the v0.3.4 backend/frontend combination.
-- SteamOS filter application now targets multiple Gamescope Xwayland roots instead of assuming a single display.
-
-## [0.3.1] - 2026-09-22
-
-### Fixed
-
-- Added persistent NIS enforcement for SteamOS/Game Mode when Steam/QAM re-applies FSR after the plugin selects NIS.
-- Explicitly applies Gamescope's AUTO scaler together with the modern and legacy NIS filter selectors.
-- Removed the speculative compatibility selector from the active filter-write path and now relies on upstream Gamescope properties.
-- Added Gamescope FSR feedback checks so the plugin can detect when FSR is still the effective scaler.
-- Added in-plugin verification messages after enabling NIS, so Steam Deck testing no longer requires terminal commands.
-
-## [0.3.0] - 2026-09-21
-
-### Added
-
-- FSR/NIS switching from the Decky Quick Access Menu.
-- NIS sharpness control with a 0–5 user-facing scale.
-- Automatic discovery of active Gamescope/Xwayland displays.
-- Persistent frontend selection for filter and sharpness.
-- Portable local install and uninstall scripts.
-- Release packaging script for GitHub Releases.
-
-### Changed
-
-- Gamescope state detection now prefers the official scaling selectors when available.
-- Public documentation and user-facing messages have been simplified for general use.
+- Initial FSR/NIS selection, sharpening, session discovery and portable installer.

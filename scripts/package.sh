@@ -8,39 +8,28 @@ out_dir="$root/release"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-mkdir -p "$out_dir" "$stage/$name/dist" "$stage/$name/src" "$stage/$name/tests" "$stage/$name/scripts" "$stage/$name/docs"
+mkdir -p "$out_dir" "$stage/$name/dist" "$stage/$name/docs"
 
-cp "$root/main.py" "$stage/$name/main.py"
-cp "$root/plugin.json" "$stage/$name/plugin.json"
-cp "$root/package.json" "$stage/$name/package.json"
-cp "$root/README.md" "$stage/$name/README.md"
-cp "$root/README_ES.md" "$stage/$name/README_ES.md"
-cp "$root/CHANGELOG.md" "$stage/$name/CHANGELOG.md"
-cp "$root/AI_DISCLOSURE.md" "$stage/$name/AI_DISCLOSURE.md"
-cp "$root/LICENSE" "$stage/$name/LICENSE"
-cp "$root/dist/index.js" "$stage/$name/dist/index.js"
-cp "$root/src/index.tsx" "$stage/$name/src/index.tsx"
-cp "$root/rollup.config.js" "$stage/$name/rollup.config.js"
-cp "$root/tsconfig.json" "$stage/$name/tsconfig.json"
-cp "$root/package-lock.json" "$stage/$name/package-lock.json"
-cp "$root/tests/"*.py "$root/tests/"*.cjs "$stage/$name/tests/"
-cp "$root/scripts/package.sh" "$stage/$name/scripts/package.sh"
-cp "$root/docs/validation-1.2.0.md" "$stage/$name/docs/validation-1.2.0.md"
-cp "$root/docs/comparison-1.1.0-to-1.2.0.md" "$stage/$name/docs/comparison-1.1.0-to-1.2.0.md"
-
-# Include the portable local installer/uninstaller so GitHub Release users
-# can install the exact packaged build without cloning the repository.
-cp "$root/install.sh" "$stage/$name/install.sh"
-cp "$root/uninstall.sh" "$stage/$name/uninstall.sh"
+# Installation payload only. Full sources, tests and build tools stay in Git.
+files=(
+    main.py plugin.json package.json dist/index.js
+    install.sh uninstall.sh LICENSE CHANGELOG.md
+    README.md README_ES.md
+    docs/COMPATIBILITY.md docs/DEVELOPMENT.md
+)
+for file in "${files[@]}"; do
+    cp "$root/$file" "$stage/$name/$file"
+done
 chmod +x "$stage/$name/install.sh" "$stage/$name/uninstall.sh"
 
 archive="$out_dir/${name}-v${version}.zip"
-rm -f "$archive"
+# Build a fresh archive so removed documentation cannot survive an update.
 (
-  cd "$stage"
-  zip -qr "$archive" "$name"
+    cd "$stage"
+    zip -qr "$stage/$name.zip" "$name"
 )
+mv -- "$stage/$name.zip" "$archive"
+(cd "$out_dir" && sha256sum "$(basename -- "$archive")" > "$(basename -- "$archive").sha256")
 
 echo "Created: $archive"
-(cd "$out_dir" && sha256sum "$(basename -- "$archive")" > "$(basename -- "$archive").sha256")
 echo "Checksum: $archive.sha256"
