@@ -2,6 +2,45 @@
 
 All notable changes to Sharp Filter Selector are documented here.
 
+## [1.2.0] - 2026-10-24
+
+### Added
+
+- Independent SteamOS QAM bridge on SGSR-capable active Gamescope: translate
+  Sharp selector `2` to SGSR `5` and synchronize sibling Xwayland roots.
+- Checks every 750 ms plus X11 response time: delayed promotion, not an atomic
+  Gamescope patch. Linear, Nearest and Pixel are unchanged with overrides off.
+- Backend/frontend tests, type checking, and build/test inputs in the ZIP.
+
+### Fixed
+
+- SteamOS file-capability Gamescope can deny `/proc/PID/exe` access to the
+  unprivileged plugin. Probe its observed absolute argv executable only when
+  it is an unchanged, root-owned ELF in non-writable directories and predates
+  the process. Never guess from PATH; no root plugin permission is added.
+- Show SGSR detection state explicitly in the UI and log bridge state changes
+  so detection failures cannot silently look like a FSR/NIS-only build.
+- Modern SteamOS NIS/FSR and native Sharp selection no longer reset QAM's scaler
+  or write competing legacy selectors. Modern overrides share one bridge.
+- Capability refresh continues even if stored-preference restoration initially
+  fails without active Gamescope. Desktop Mode no longer labels unknown support FSR.
+- Four-part Gamescope versions, such as `3.16.30.1`, are reported completely.
+
+### Compatibility and validation
+
+- All twelve Ubuntu-specific methods remain unchanged from 1.1.0 and the plugin
+  bundled with Ubuntu-Gaming-Mode. No UGM repository files are changed.
+- Old SteamOS retains its validated LINEAR → NIS transition and legacy property
+  behavior. Application-HDR visibility rules are unchanged.
+- Automated tests cover all six filters, five scalers, both overrides, recovery,
+  shutdown, HDR reporting and both frontend controls.
+- 48 automated tests passed (41 Python + 7 frontend), plus TypeScript, Rollup,
+  syntax and release-package checks.
+- SteamOS 3.9.5 / Gamescope 3.16.30.1: the maintainer confirmed correct operation
+  after testing the corrected plugin on 2026-10-24. This is functional user
+  validation, not an independent GPU trace or a complete physical HDR matrix.
+- See `docs/validation-1.2.0.md` and `docs/comparison-1.1.0-to-1.2.0.md`.
+
 ## [1.1.0] - 2026-09-29
 
 ### Fixed

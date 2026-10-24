@@ -119,6 +119,8 @@ function targetSummary(result) {
         .join(" · ");
 }
 function nativeLabel(capabilities) {
+    if (!capabilities?.success)
+        return "waiting for a Gamescope session";
     if (!capabilities?.supportsSGSR)
         return "FSR";
     return capabilities.hdrInput ? "FSR (HDR fallback)" : "SGSR";
@@ -346,20 +348,10 @@ function Content() {
                     setNisEnabledState(false);
                     setFsrOverrideState(false);
                     setSharpnessState(desiredSharpness);
-                    setStatus("Gamescope capability detection unavailable");
+                    setStatus(caps.steamos
+                        ? "Available in Gaming Mode · waiting for active Gamescope"
+                        : "Gamescope capability detection unavailable");
                 }
-                timer = setInterval(async () => {
-                    try {
-                        const next = await getCapabilities();
-                        if (mounted)
-                            setCapabilities(next);
-                    }
-                    catch {
-                        // Keep SGSR capability, but do not hide FSR using stale HDR feedback.
-                        if (mounted)
-                            clearHdrFeedback();
-                    }
-                }, 1500);
             }
             catch (error) {
                 if (!mounted)
@@ -367,6 +359,20 @@ function Content() {
                 setStatus(`Error: ${String(error)}`);
             }
         };
+        // Start before initialization: an unavailable session or failed preference
+        // restore must not permanently prevent SGSR/FSR capability refresh.
+        timer = setInterval(async () => {
+            try {
+                const next = await getCapabilities();
+                if (mounted)
+                    setCapabilities(next);
+            }
+            catch {
+                // Keep SGSR capability, but do not hide FSR using stale HDR feedback.
+                if (mounted)
+                    clearHdrFeedback();
+            }
+        }, 1500);
         void initialize();
         return () => {
             mounted = false;
@@ -376,13 +382,22 @@ function Content() {
     }, []);
     const showFsrOverride = Boolean(capabilities?.showFsrOverride);
     const supportsSgsr = Boolean(capabilities?.supportsSGSR);
+    const sgsrStatus = !capabilities
+        ? "SGSR: checking Gamescope…"
+        : !capabilities.success
+            ? "SGSR: waiting for an active Gamescope session"
+            : supportsSgsr
+                ? (capabilities.hdrInput ? "SGSR available · HDR input uses FSR fallback" : "QAM Sharp → SGSR (both overrides off)")
+                : capabilities.errors?.length
+                    ? "SGSR: capability detection unavailable"
+                    : "SGSR: not supported by the active Gamescope";
     return (SP_JSX.jsxs(DFL.PanelSection, { title: "Sharp Filter", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Use NIS", description: nisEnabled
                         ? "Override the native Sharp filter with NVIDIA Image Scaling."
                         : `Native Sharp filter: ${nativeLabel(capabilities)}.`, checked: nisEnabled, onChange: applyNis }) }), showFsrOverride && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Use FSR", description: fsrOverride
                         ? "Override SGSR with AMD FidelityFX Super Resolution."
                         : "Leave this off to use Gamescope's native SGSR Sharp filter.", checked: fsrOverride, onChange: applyFsr }) })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.SliderField, { label: `Sharpness (${sharpness}/5)`, description: "Shared FSR/NIS sharpening: 0 minimum, 5 maximum. Disabled when using native Sharp/SGSR.", value: sharpness, min: 0, max: 5, step: 1, notchCount: 6, disabled: !nisEnabled && !fsrOverride, onChange: applySharpness }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsxs("div", { style: { fontSize: "12px", opacity: 0.8, padding: "4px 0 8px" }, children: [status, supportsSgsr && capabilities?.gamescopeVersion
                             ? ` · Gamescope ${capabilities.gamescopeVersion}`
-                            : ""] }) })] }));
+                            : "", SP_JSX.jsx("div", { style: { paddingTop: "4px" }, children: sgsrStatus })] }) })] }));
 }
 var index = definePlugin(() => ({
     name: "Sharp Filter Selector",

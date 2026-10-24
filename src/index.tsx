@@ -93,6 +93,7 @@ function targetSummary(result: BackendResult): string {
 }
 
 function nativeLabel(capabilities: CapabilityResult | null): string {
+  if (!capabilities?.success) return "waiting for a Gamescope session";
   if (!capabilities?.supportsSGSR) return "FSR";
   return capabilities.hdrInput ? "FSR (HDR fallback)" : "SGSR";
 }
@@ -342,24 +343,27 @@ function Content() {
           setNisEnabledState(false);
           setFsrOverrideState(false);
           setSharpnessState(desiredSharpness);
-          setStatus("Gamescope capability detection unavailable");
+          setStatus(caps.steamos
+            ? "Available in Gaming Mode · waiting for active Gamescope"
+            : "Gamescope capability detection unavailable");
         }
-
-        timer = setInterval(async () => {
-          try {
-            const next = await getCapabilities();
-            if (mounted) setCapabilities(next);
-          } catch {
-            // Keep SGSR capability, but do not hide FSR using stale HDR feedback.
-            if (mounted) clearHdrFeedback();
-          }
-        }, 1500);
       } catch (error) {
         if (!mounted) return;
         setStatus(`Error: ${String(error)}`);
       }
     };
 
+    // Start before initialization: an unavailable session or failed preference
+    // restore must not permanently prevent SGSR/FSR capability refresh.
+    timer = setInterval(async () => {
+      try {
+        const next = await getCapabilities();
+        if (mounted) setCapabilities(next);
+      } catch {
+        // Keep SGSR capability, but do not hide FSR using stale HDR feedback.
+        if (mounted) clearHdrFeedback();
+      }
+    }, 1500);
     void initialize();
     return () => {
       mounted = false;
@@ -369,6 +373,15 @@ function Content() {
 
   const showFsrOverride = Boolean(capabilities?.showFsrOverride);
   const supportsSgsr = Boolean(capabilities?.supportsSGSR);
+  const sgsrStatus = !capabilities
+    ? "SGSR: checking Gamescope…"
+    : !capabilities.success
+      ? "SGSR: waiting for an active Gamescope session"
+      : supportsSgsr
+        ? (capabilities.hdrInput ? "SGSR available · HDR input uses FSR fallback" : "QAM Sharp → SGSR (both overrides off)")
+        : capabilities.errors?.length
+          ? "SGSR: capability detection unavailable"
+          : "SGSR: not supported by the active Gamescope";
 
   return (
     <PanelSection title="Sharp Filter">
@@ -420,6 +433,7 @@ function Content() {
           {supportsSgsr && capabilities?.gamescopeVersion
             ? ` · Gamescope ${capabilities.gamescopeVersion}`
             : ""}
+          <div style={{ paddingTop: "4px" }}>{sgsrStatus}</div>
         </div>
       </PanelSectionRow>
     </PanelSection>

@@ -10,8 +10,9 @@ https://github.com/N3ruk/Sharp-Filter-Selector
 
 ```bash
 npm ci
+npm test
+npm run typecheck
 npm run build
-python3 -m unittest discover -s tests -v
 npm run package
 ```
 
@@ -44,6 +45,11 @@ must contain a single top-level `sharp-filter-selector` directory with
 The release title is `Sharp Filter Selector X.Y.Z`. Use the matching changelog
 entry as release notes and state separately which behaviors were physically
 validated in Gaming Mode and which were covered only by automated tests.
+For 1.2.0, link the validation report and the 1.1.0 comparison. Attribute the
+Gaming confirmation to the maintainer; do not claim a captured GPU trace or a
+complete physical HDR/scaler matrix. Wait for the published main commit's CI
+checks before making the release public, then download both release assets and
+verify their checksum and runtime files against the source tag.
 
 Suggested repository topics:
 

@@ -17,7 +17,7 @@ para **AMD FSR** y **NVIDIA NIS**.
 - Control compartido de nitidez 0–5 para FSR/NIS explícitos.
 - Sincroniza las distintas raíces Xwayland de Gamescope.
 - Deja el modo de reescalado QAM (`Automático`, `Ajustar`, `Entero`, `Estirar`)
-  bajo control del QAM; en Ubuntu elegir filtro nunca cambia el scaler.
+  bajo control del QAM; elegir filtro no cambia el scaler en Ubuntu ni SteamOS con SGSR.
 - Recuerda las selecciones explícitas sin escrituras pasivas al cargar el
   frontend.
 - No parchea, sustituye ni instala Gamescope.
@@ -38,7 +38,7 @@ disponible, el plugin conserva el comportamiento compatible FSR/NIS.
 ### ZIP de GitHub Releases
 
 1. Descarga el ZIP de la versión deseada (por ejemplo,
-   `sharp-filter-selector-v1.1.0.zip`).
+   `sharp-filter-selector-v1.2.0.zip`).
 2. Extráelo; contiene una única carpeta `sharp-filter-selector`.
 3. Ejecuta el instalador incluido:
 
@@ -100,8 +100,34 @@ overrides mantienen NIS `3` o FSR `2`.
 
 ### SteamOS
 
-Se conserva la detección multi-Xwayland y la transición explícita LINEAR → NIS
-ya validadas, añadiendo SGSR nativo y FSR explícito cuando Gamescope lo permite.
+Desde 1.2.0 hay un puente independiente para SteamOS con Gamescope activo
+compatible con SGSR. Como en Ubuntu, Xwayland servidor 0 es la autoridad del
+QAM: Sharp/Nitidez (`2`) se traduce a SGSR (`5`). Con ambos overrides apagados,
+Lineal, Nearest y Pixel no cambian. Se comprueba cada 750 ms más la respuesta
+de X11: puede existir un instante de FSR antes de SGSR. **No es una traducción
+atómica dentro de Gamescope** y no se modifica el ejecutable del sistema.
+
+Los overrides modernos NIS/FSR solo escriben el selector moderno de filtro.
+El escalado elegido en QAM se conserva; únicamente se sincronizan los valores
+distintos de las raíces hermanas. Para usar SGSR con Nitidez deja **Use NIS** y
+**Use FSR** apagados. Una preferencia NIS guardada no se desactiva al actualizar.
+
+En Gamescope antiguo se conservan la ruta legacy, la transición LINEAR → NIS y
+el tratamiento del escalado ya validados. El backend Ubuntu/UGM no cambia.
+
+En Escritorio no se confunde soporte instalado con sesión activa: FSR solo
+aparece cuando Gamescope **activo** anuncia SGSR y la entrada HDR no requiere
+el fallback FSR nativo. La detección se actualiza aunque la restauración inicial
+de preferencias falle por no estar todavía en Gaming Mode.
+
+SteamOS puede bloquear `/proc/PID/exe` por las capacidades del ejecutable
+Gamescope. En ese caso se comprueba la **ruta absoluta observada en argv de ese
+proceso**, solo si es un ELF propiedad de root, en directorios no modificables,
+y sus metadatos son anteriores al proceso y no cambian durante la prueba.
+Las rutas relativas, reemplazos y casos ambiguos no se aceptan. No se elige
+ningún ejecutable desde PATH, no se quitan capacidades de Gamescope ni se
+concede root al plugin. La interfaz muestra el estado SGSR explícitamente:
+un fallo de detección no significa que la versión instalada carezca de SGSR.
 
 ### HDR
 
@@ -116,6 +142,16 @@ independientemente del HDR de la pantalla. Abrir QAM no activa por sí mismo
 esta condición; se consulta la señal actual sin conservar HDR de otro juego.
 
 ## Compatibilidad y validación
+
+La ampliación SteamOS 1.2.0 tiene su [informe de validación](docs/validation-1.2.0.md).
+El 24-10-2026, tras corregir la detección por permisos, el mantenedor confirmó
+que el plugin funciona correctamente en el flujo Gaming de SteamOS. Es una
+confirmación funcional del usuario, no una captura independiente del shader ni
+la afirmación de haber repetido físicamente todas las combinaciones HDR/escalado.
+**48 pruebas automáticas** (41 Python + 7 frontend) cubren la matriz detallada.
+
+La [comparación 1.1.0 → 1.2.0](docs/comparison-1.1.0-to-1.2.0.md) detalla los
+cambios y lo conservado de Ubuntu/UGM, SteamOS antiguo y la lógica HDR.
 
 La versión 1.1.0 se validó en Ubuntu 26.04 Gaming Mode con Gamescope 3.16.30,
 NVIDIA RTX 2060, varias raíces Xwayland, salida 4K y VRR. Una prueba física con
@@ -155,7 +191,9 @@ filtro deliberadamente no sobrescribe el scaler.
 ## Desarrollo y empaquetado
 
 ```bash
-npm install
+npm ci
+npm test
+npm run typecheck
 npm run build
 npm run package
 ```
@@ -168,7 +206,8 @@ release/sharp-filter-selector-vX.Y.Z.zip.sha256
 ```
 
 El ZIP incluye runtime compilado, fuente del frontend, instalador y
-desinstalador portables, README, changelog y licencia.
+desinstalador portables, README, changelog, licencia, lockfile, pruebas,
+informe de validación y comparación con la release anterior.
 
 Las releases usan el `dist/index.js` validado y guardado en el repositorio. Como
 las dependencias de Decky pueden cambiar el wrapper generado, revisa y prueba un

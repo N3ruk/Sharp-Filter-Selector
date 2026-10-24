@@ -7,9 +7,12 @@ Compatibility policy:
   GAMESCOPE_SHARP_FILTER only for compatibility with older builds. It never
   changes the scaler selected by Steam/QAM.
 - SteamOS keeps its validated multi-Xwayland NIS path, including the
-  LINEAR -> NIS transition and enforcement loop.
+  LINEAR -> NIS transition and enforcement loop on older Gamescope builds.
+- SGSR-capable SteamOS builds additionally synchronize QAM server 0, promoting
+  Sharp (2) to SGSR (5) without resetting QAM's scaler. This is a periodic
+  compatibility bridge, not an atomic remapping inside Gamescope.
 - Gamescope builds that advertise SGSR gain a dynamic native-Sharp path:
-  Steam's Sharp value 5 is restored for SGSR in SDR and Gamescope performs its
+  Gamescope selector 5 is restored for SGSR in SDR and Gamescope performs its
   own FSR fallback for HDR input.
 - FSR override visibility follows fresh, unambiguous application HDR feedback;
   display HDR alone never hides it. Unknown feedback fails open so an SDR game
@@ -25,6 +28,7 @@ import asyncio
 import os
 import re
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -64,6 +68,7 @@ FAST_ENFORCE_PASSES = 6
 FAST_ENFORCE_INTERVAL = 0.20
 STEADY_ENFORCE_INTERVAL = 0.75
 UBUNTU_SYNC_INTERVAL = 0.75
+STEAMOS_SYNC_INTERVAL = 0.75
 TRANSITION_DELAY = 0.08
 
 
@@ -74,6 +79,9 @@ class Plugin:
         self._enforce_task: asyncio.Task | None = None
         self._fsr_enforce_task: asyncio.Task | None = None
         self._ubuntu_sync_task: asyncio.Task | None = None
+        self._steamos_sync_task: asyncio.Task | None = None
+        self._steamos_sync_lock = asyncio.Lock()
+        self._steamos_bridge_note_value: str | None = None
         self._gamescope_probe_cache: dict | None = None
 
     # ------------------------------------------------------------------
@@ -681,6 +689,146 @@ class Plugin:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _steamos_credentials(uid: int, gid: int) -> dict:
+        # subprocess performs this in C, without Python preexec_fn in a worker
+        # thread. Preserve the old privilege boundary and clear supplementary groups.
+        return {"user": uid, "group": gid, "extra_groups": []} if os.geteuid() == 0 else {}
+
+    @classmethod
+    def _steamos_read_qam_state(cls, target: tuple) -> dict[str, int | None]:
+        """Read the modern selectors together, using SteamOS authentication."""
+        display, uid, gid, environment, _source = target
+        names = (
+            "GAMESCOPE_XWAYLAND_SERVER_ID",
+            "GAMESCOPE_NEW_SCALING_FILTER",
+            "GAMESCOPE_NEW_SCALING_SCALER",
+        )
+        values = dict.fromkeys(names)
+        xprop = cls._xprop_binary()
+        if not xprop:
+            return values
+        try:
+            completed = subprocess.run(
+                [xprop, "-display", display, "-root", *names],
+                check=False, capture_output=True, text=True, timeout=3,
+                env=cls._steamos_xenv(environment),
+                **cls._steamos_credentials(uid, gid),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return values
+        if completed.returncode != 0:
+            return values
+        for line in completed.stdout.splitlines():
+            match = re.match(r"^([^(:\s]+).*?=\s*(-?\d+)\s*$", line)
+            if match and match.group(1) in values:
+                values[match.group(1)] = int(match.group(2))
+        return values
+
+    def _steamos_bridge_note(self, message: str) -> None:
+        if message != self._steamos_bridge_note_value:
+            self._steamos_bridge_note_value = message
+            decky.logger.info("Sharp Filter Selector: %s", message)
+
+    def _steamos_sync_qam_once(self) -> None:
+        """SteamOS-only bridge; old Gamescope and Ubuntu are deliberately inert.
+
+        Require one identified QAM root rather than guessing from display order.
+        Mirror only changed modern properties. In particular, never reset the
+        controller's scaler or send legacy filter values to modern Gamescope.
+        """
+        if not self._is_steamos():
+            return
+        capability = self._gamescope_capabilities()
+        if not capability.get("supportsSGSR"):
+            self._steamos_bridge_note(
+                f"SGSR bridge waiting: pid={capability.get('pid')}; "
+                + "; ".join(capability.get("errors", []))
+            )
+            return
+        targets = self._steamos_targets()
+        states = {target[0]: self._steamos_read_qam_state(target) for target in targets}
+        controllers = [
+            target for target in targets
+            if states[target[0]]["GAMESCOPE_XWAYLAND_SERVER_ID"] == 0
+        ]
+        if len(controllers) != 1:
+            self._steamos_bridge_note(f"SGSR bridge waiting: expected one QAM root, found {len(controllers)}")
+            return
+        controller = controllers[0]
+        qam = states[controller[0]]
+        desired_filter = qam["GAMESCOPE_NEW_SCALING_FILTER"]
+        if desired_filter not in range(6):
+            self._steamos_bridge_note(f"SGSR bridge waiting: {controller[0]} has no valid modern filter")
+            return
+        if self._nis_requested:
+            desired_filter = NEW_SCALING_NIS
+        elif self._fsr_override_requested:
+            desired_filter = NEW_SCALING_FSR
+        elif desired_filter == NEW_SCALING_FSR:
+            desired_filter = NEW_SCALING_SGSR
+        qam_scaler = qam["GAMESCOPE_NEW_SCALING_SCALER"]
+        self._steamos_bridge_note(
+            f"QAM bridge pid={capability.get('pid')} controller={controller[0]} "
+            f"filter={desired_filter} scaler={qam_scaler} "
+            f"nis={self._nis_requested} fsr={self._fsr_override_requested} "
+            f"evidence={capability.get('evidence', 'unknown')}"
+        )
+        for target in targets:
+            state = states[target[0]]
+            server_id = state["GAMESCOPE_XWAYLAND_SERVER_ID"]
+            if server_id is None or server_id < 0:
+                continue
+            properties = []
+            if state["GAMESCOPE_NEW_SCALING_FILTER"] != desired_filter:
+                properties.append(("GAMESCOPE_NEW_SCALING_FILTER", desired_filter))
+            if qam_scaler in range(5) and state["GAMESCOPE_NEW_SCALING_SCALER"] != qam_scaler:
+                properties.append(("GAMESCOPE_NEW_SCALING_SCALER", qam_scaler))
+            if properties:
+                _applied, errors = self._steamos_write_to_targets([target], tuple(properties))
+                for error in errors:
+                    decky.logger.warning("Sharp Filter Selector: SteamOS QAM sync: %s", error)
+
+    async def _steamos_sync_qam_loop(self) -> None:
+        while self._is_steamos():
+            await asyncio.sleep(STEAMOS_SYNC_INTERVAL)
+            try:
+                # Keep synchronous /proc and X11 operations off Decky's API loop.
+                # Await each pass: no overlapping writes or unbounded worker queue.
+                async with self._steamos_sync_lock:
+                    worker = asyncio.create_task(asyncio.to_thread(self._steamos_sync_qam_once))
+                    try:
+                        await asyncio.shield(worker)
+                    except asyncio.CancelledError as cancelled:
+                        # A thread cannot be cancelled. Drain it before releasing
+                        # the lock/unloading so no late writes escape the task.
+                        try:
+                            await worker
+                        except Exception:
+                            decky.logger.exception("Sharp Filter Selector: final SteamOS sync pass failed")
+                        raise cancelled
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A dying/restarting Xwayland must not permanently disable bridging.
+                decky.logger.exception("Sharp Filter Selector: SteamOS QAM sync failed")
+
+    def _start_steamos_sync(self) -> None:
+        if self._is_steamos() and (
+            self._steamos_sync_task is None or self._steamos_sync_task.done()
+        ):
+            self._steamos_sync_task = asyncio.create_task(self._steamos_sync_qam_loop())
+
+    async def _stop_steamos_sync(self) -> None:
+        task = self._steamos_sync_task
+        self._steamos_sync_task = None
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    @staticmethod
     def _xprop_binary() -> str | None:
         for candidate in (
             shutil.which("xprop"),
@@ -831,6 +979,51 @@ class Plugin:
         ]
 
     @classmethod
+    def _steamos_observed_executable(cls, pid: int) -> tuple[str, tuple] | None:
+        """Correlate a permission-restricted process with its observed ELF path.
+
+        File-capability Gamescope may deny /proc/PID/exe even to its own user.
+        Never substitute PATH or a version guess. Accept only the process's
+        absolute argv[0], in a root-owned non-writable directory chain, with
+        file metadata strictly older than the process. Replacement/updates,
+        relative argv, scripts and ambiguous identity fail closed.
+        """
+        try:
+            proc = Path("/proc") / str(pid)
+            argv = cls._proc_cmdline(proc)
+            if not argv or not Path(argv[0]).is_absolute():
+                return None
+            path = Path(argv[0]).resolve(strict=True)
+            if path.name != "gamescope" and not path.name.startswith("gamescope-"):
+                return None
+            metadata = path.stat()
+            if not stat.S_ISREG(metadata.st_mode):
+                return None
+            for entry in (path, *path.parents):
+                info = entry.stat()
+                if info.st_uid != 0 or info.st_mode & 0o022:
+                    return None
+            process_fields = (proc / "stat").read_text().rsplit(")", 1)[1].split()
+            start_ticks = int(process_fields[19])
+            boot_time = next(
+                int(line.split()[1]) for line in Path("/proc/stat").read_text().splitlines()
+                if line.startswith("btime ")
+            )
+            # btime is only second-resolution: leave an additional second of
+            # margin rather than accepting a file changed around exec time.
+            start_lower_bound = boot_time + start_ticks / os.sysconf("SC_CLK_TCK") - 1
+            if max(metadata.st_ctime, metadata.st_mtime) >= start_lower_bound:
+                return None
+            with path.open("rb") as binary:
+                if binary.read(4) != b"\x7fELF":
+                    return None
+            identity = (metadata.st_dev, metadata.st_ino, metadata.st_ctime_ns,
+                        metadata.st_mtime_ns, start_ticks)
+            return str(path), identity
+        except (OSError, ValueError, IndexError, StopIteration):
+            return None
+
+    @classmethod
     def _probe_gamescope_process(
         cls,
         pid: int,
@@ -839,10 +1032,16 @@ class Plugin:
         environment: dict[str, str],
     ) -> dict:
         proc_exe = f"/proc/{pid}/exe"
+        probe_exe = proc_exe
+        observed = None
         try:
             executable = os.readlink(proc_exe)
         except OSError:
             executable = proc_exe
+            if cls._is_steamos():
+                observed = cls._steamos_observed_executable(pid)
+                if observed is not None:
+                    executable = probe_exe = observed[0]
 
         probe_env = os.environ.copy()
         for key in ("PATH", "HOME", "XDG_RUNTIME_DIR", "LD_LIBRARY_PATH"):
@@ -858,14 +1057,18 @@ class Plugin:
 
         for arg, field in (("--help", "help"), ("--version", "version")):
             try:
+                credentials = (
+                    cls._steamos_credentials(uid, gid) if cls._is_steamos()
+                    else {"preexec_fn": cls._drop_privileges(uid, gid)}
+                )
                 completed = subprocess.run(
-                    [proc_exe, arg],
+                    [probe_exe, arg],
                     check=False,
                     capture_output=True,
                     text=True,
                     timeout=3,
                     env=probe_env,
-                    preexec_fn=cls._drop_privileges(uid, gid),
+                    **credentials,
                 )
                 output = (completed.stdout or "") + "\n" + (completed.stderr or "")
                 if field == "help":
@@ -885,7 +1088,7 @@ class Plugin:
                 saw_sgsr = False
                 saw_snapdragon = False
                 tail = b""
-                with open(proc_exe, "rb", buffering=0) as binary:
+                with open(probe_exe, "rb", buffering=0) as binary:
                     while True:
                         chunk = binary.read(1024 * 1024)
                         if not chunk:
@@ -903,11 +1106,18 @@ class Plugin:
                 pass
 
         version_match = re.search(
-            r"(?:gamescope(?:\s+version)?\s+)?(\d+\.\d+(?:\.\d+)?)",
+            r"(?:gamescope(?:\s+version)?\s+)?(\d+(?:\.\d+){1,3})",
             version_text,
             re.IGNORECASE,
         )
         version = version_match.group(1) if version_match else None
+
+        if observed is not None:
+            if cls._steamos_observed_executable(pid) != observed:
+                supports_sgsr, evidence, version = False, "", None
+                errors.append("Observed Gamescope executable changed during capability probe")
+            elif evidence:
+                evidence = "process-argv-" + evidence
 
         return {
             "pid": pid,
@@ -915,6 +1125,7 @@ class Plugin:
             "version": version,
             "supportsSGSR": supports_sgsr,
             "evidence": evidence or "none",
+            "executableEvidence": "process-argv-unchanged" if observed else "proc-exe",
             "errors": errors,
         }
 
@@ -1181,7 +1392,7 @@ class Plugin:
                 text=True,
                 timeout=3,
                 env=cls._steamos_xenv(environment),
-                preexec_fn=cls._drop_privileges(uid, gid),
+                **cls._steamos_credentials(uid, gid),
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             return False, str(exc)
@@ -1211,7 +1422,7 @@ class Plugin:
                 text=True,
                 timeout=3,
                 env=cls._steamos_xenv(environment),
-                preexec_fn=cls._drop_privileges(uid, gid),
+                **cls._steamos_credentials(uid, gid),
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return None
@@ -1270,10 +1481,14 @@ class Plugin:
             # Steam's modern Sharp wire value. Do not send legacy value 5: the
             # legacy selector only defines values 0..4.
             return (
-                ("GAMESCOPE_NEW_SCALING_SCALER", NEW_SCALER_AUTO),
                 ("GAMESCOPE_NEW_SCALING_FILTER", NEW_SCALING_SGSR),
             )
         return self._steamos_properties(False)
+
+    def _steamos_override_properties(self, nis: bool) -> tuple[tuple[str, int], ...]:
+        if self._gamescope_capabilities().get("supportsSGSR"):
+            return (("GAMESCOPE_NEW_SCALING_FILTER", NEW_SCALING_NIS if nis else NEW_SCALING_FSR),)
+        return self._steamos_properties(nis)
 
     async def _steamos_restore_native_sharp(self) -> tuple[list[str], list[str]]:
         return self._steamos_write_to_targets(
@@ -1287,6 +1502,9 @@ class Plugin:
         targets = self._steamos_targets()
         if not targets:
             return [], []
+
+        if self._gamescope_capabilities().get("supportsSGSR"):
+            return self._steamos_write_to_targets(targets, self._steamos_override_properties(True))
 
         self._steamos_write_to_targets(
             targets,
@@ -1362,6 +1580,9 @@ class Plugin:
     def _start_enforcer(self) -> None:
         if not self._is_steamos():
             return
+        if self._gamescope_capabilities().get("supportsSGSR"):
+            # Modern overrides share the QAM bridge; no competing legacy writer.
+            return
 
         task = self._enforce_task
         if task and not task.done():
@@ -1411,7 +1632,7 @@ class Plugin:
                 if needs_reapply and targets:
                     self._steamos_write_to_targets(
                         targets,
-                        self._steamos_properties(True),
+                        self._steamos_override_properties(True),
                     )
 
                 if fast_passes > 0:
@@ -1426,6 +1647,8 @@ class Plugin:
 
     def _start_fsr_enforcer(self) -> None:
         if not self._is_steamos():
+            return
+        if self._gamescope_capabilities().get("supportsSGSR"):
             return
 
         task = self._fsr_enforce_task
@@ -1476,7 +1699,7 @@ class Plugin:
                 if needs_reapply and targets:
                     self._steamos_write_to_targets(
                         targets,
-                        self._steamos_properties(False),
+                        self._steamos_override_properties(False),
                     )
 
                 if fast_passes > 0:
@@ -1502,7 +1725,7 @@ class Plugin:
             if self._fsr_override_requested:
                 applied, errors = self._steamos_write_to_targets(
                     self._steamos_targets(),
-                    self._steamos_properties(False),
+                    self._steamos_override_properties(False),
                 )
             else:
                 applied, errors = await self._steamos_restore_native_sharp()
@@ -1536,7 +1759,8 @@ class Plugin:
             "errors": errors,
             "steamos": True,
             "enforcing": bool(
-                self._enforce_task and not self._enforce_task.done()
+                (self._enforce_task and not self._enforce_task.done())
+                or (self._steamos_sync_task and not self._steamos_sync_task.done())
             ),
         }
 
@@ -1555,7 +1779,7 @@ class Plugin:
             await self._stop_enforcer()
             applied, errors = self._steamos_write_to_targets(
                 self._steamos_targets(),
-                self._steamos_properties(False),
+                self._steamos_override_properties(False),
             )
             self._start_fsr_enforcer()
         else:
@@ -1563,7 +1787,7 @@ class Plugin:
             if self._nis_requested:
                 applied, errors = self._steamos_write_to_targets(
                     self._steamos_targets(),
-                    self._steamos_properties(True),
+                    self._steamos_override_properties(True),
                 )
             else:
                 applied, errors = await self._steamos_restore_native_sharp()
@@ -1587,7 +1811,8 @@ class Plugin:
             "errors": errors,
             "steamos": True,
             "enforcing": bool(
-                self._fsr_enforce_task and not self._fsr_enforce_task.done()
+                (self._fsr_enforce_task and not self._fsr_enforce_task.done())
+                or (self._steamos_sync_task and not self._steamos_sync_task.done())
             ),
         }
 
@@ -1694,6 +1919,7 @@ class Plugin:
             "enforcing": bool(
                 (self._enforce_task and not self._enforce_task.done())
                 or (self._fsr_enforce_task and not self._fsr_enforce_task.done())
+                or (self._steamos_sync_task and not self._steamos_sync_task.done())
             ),
         }
 
@@ -1705,14 +1931,15 @@ class Plugin:
         if not isinstance(enabled, bool):
             return {"success": False, "error": "Invalid NIS state"}
 
+        if self._is_steamos():
+            async with self._steamos_sync_lock:
+                return await self._steamos_set_nis_enabled(enabled)
+
         if enabled:
             self._fsr_override_requested = False
             self._nis_requested = True
         else:
             self._nis_requested = False
-
-        if self._is_steamos():
-            return await self._steamos_set_nis_enabled(enabled)
 
         if not enabled and self._fsr_override_requested:
             return await self._ubuntu_set_fsr_override(True)
@@ -1722,14 +1949,15 @@ class Plugin:
         if not isinstance(enabled, bool):
             return {"success": False, "error": "Invalid FSR override state"}
 
+        if self._is_steamos():
+            async with self._steamos_sync_lock:
+                return await self._steamos_set_fsr_override(enabled)
+
         if enabled:
             self._nis_requested = False
             self._fsr_override_requested = True
         else:
             self._fsr_override_requested = False
-
-        if self._is_steamos():
-            return await self._steamos_set_fsr_override(enabled)
 
         return await self._ubuntu_set_fsr_override(enabled)
 
@@ -1780,6 +2008,7 @@ class Plugin:
 
     async def _main(self):
         self._start_ubuntu_sync()
+        self._start_steamos_sync()
         decky.logger.info(
             "Sharp Filter Selector loaded (SteamOS=%s, Ubuntu compatibility path=%s)",
             self._is_steamos(),
@@ -1790,6 +2019,7 @@ class Plugin:
         self._nis_requested = False
         self._fsr_override_requested = False
         await self._stop_ubuntu_sync()
+        await self._stop_steamos_sync()
         await self._stop_enforcer()
         await self._stop_fsr_enforcer()
         decky.logger.info("Sharp Filter Selector unloaded")

@@ -8,7 +8,7 @@ out_dir="$root/release"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-mkdir -p "$out_dir" "$stage/$name/dist" "$stage/$name/src"
+mkdir -p "$out_dir" "$stage/$name/dist" "$stage/$name/src" "$stage/$name/tests" "$stage/$name/scripts" "$stage/$name/docs"
 
 cp "$root/main.py" "$stage/$name/main.py"
 cp "$root/plugin.json" "$stage/$name/plugin.json"
@@ -22,6 +22,11 @@ cp "$root/dist/index.js" "$stage/$name/dist/index.js"
 cp "$root/src/index.tsx" "$stage/$name/src/index.tsx"
 cp "$root/rollup.config.js" "$stage/$name/rollup.config.js"
 cp "$root/tsconfig.json" "$stage/$name/tsconfig.json"
+cp "$root/package-lock.json" "$stage/$name/package-lock.json"
+cp "$root/tests/"*.py "$root/tests/"*.cjs "$stage/$name/tests/"
+cp "$root/scripts/package.sh" "$stage/$name/scripts/package.sh"
+cp "$root/docs/validation-1.2.0.md" "$stage/$name/docs/validation-1.2.0.md"
+cp "$root/docs/comparison-1.1.0-to-1.2.0.md" "$stage/$name/docs/comparison-1.1.0-to-1.2.0.md"
 
 # Include the portable local installer/uninstaller so GitHub Release users
 # can install the exact packaged build without cloning the repository.
